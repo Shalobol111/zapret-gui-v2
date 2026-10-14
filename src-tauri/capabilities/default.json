@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Права главного окна: только нужные команды, без shell и fs.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-theme",
+    "core:window:allow-destroy",
+    "core:window:allow-hide",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "clipboard-manager:allow-read-text"
+  ]
+}
+
