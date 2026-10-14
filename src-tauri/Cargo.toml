@@ -1,0 +1,41 @@
+[package]
+name = "zapret-gui"
+version = "2.0.0"
+description = "ZapretGUI — управление zapret-discord-youtube"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "zapret_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "charset", "http2", "system-proxy"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.0"
+sysinfo = "0.36.1"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+tauri-winrt-notification = "0.8"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+url = "2.5.8"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_System_Registry", "Win32_UI_Shell", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_NetworkManagement_IpHelper", "Win32_System_Services", "Win32_System_Com"] }
+windows-service = "0.8.1"
+winreg = "0.56.0"
+zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

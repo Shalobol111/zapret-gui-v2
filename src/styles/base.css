@@ -1,0 +1,133 @@
+@import "@fontsource/onest/cyrillic-400.css";
+@import "@fontsource/onest/cyrillic-500.css";
+@import "@fontsource/onest/cyrillic-600.css";
+@import "@fontsource/onest/latin-400.css";
+@import "@fontsource/onest/latin-500.css";
+@import "@fontsource/onest/latin-600.css";
+@import "@fontsource/jetbrains-mono/cyrillic-400.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "./tokens.css";
+
+:root {
+  --font-ui: "Onest", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  /* Плавная смена темы — правило из макета (DESIGN.md §6). */
+  --theme-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --theme-dur: 0.5s;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+.zr,
+.zr * {
+  transition:
+    background-color var(--theme-dur) var(--theme-ease),
+    border-color var(--theme-dur) var(--theme-ease),
+    color var(--theme-dur) var(--theme-ease),
+    box-shadow var(--theme-dur) var(--theme-ease);
+}
+
+/* Первая отрисовка — без анимации, иначе окно «проявится» из тёмной темы в светлую. */
+.zr.no-transition,
+.zr.no-transition * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zr,
+  .zr * {
+    transition: none !important;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.zr a {
+  color: var(--accent);
+}
+
+/* Нативные элементы (чекбоксы) — в цвет темы. */
+.zr {
+  color-scheme: dark;
+}
+.zr.light {
+  color-scheme: light;
+}
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+input[type="checkbox"]:disabled {
+  cursor: default;
+}
+
+.zr :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Полосы прокрутки в цвет темы: системные в WebView2 светлые и со стрелками. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--line2);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gutter);
+}

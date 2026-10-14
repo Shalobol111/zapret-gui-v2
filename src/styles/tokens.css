@@ -1,0 +1,58 @@
+/* Токены дословно из макета (project/*.dc.html, правила .zr и .zr.light).
+   Не менять значения без изменения макета — он источник правды. */
+
+.zr {
+  --bg: #0D0F12;
+  --side: #111418;
+  --card: #15181D;
+  --raised: #1D2127;
+  --line: #22262D;
+  --line2: #2C313A;
+  --seg: #0F1215;
+  --segon: #2A2F37;
+  --editor: #101317;
+  --row: #1B1F25;
+  --tx: #E8EAED;
+  --tx2: #C9CDD3;
+  --dim: #9AA1AB;
+  --faint: #858C97;
+  --mute: #6F7682;
+  --gutter: #4B515B;
+  --accent: #4ADE9A;
+  --accent-soft: rgba(74, 222, 154, 0.10);
+  --accent-ring: rgba(74, 222, 154, 0.07);
+  --onaccent: #0D0F12;
+  --warn: #F2B544;
+  --err: #F07171;
+  --err-soft: rgba(240, 113, 113, 0.10);
+  --danger-line: #3A2A2C;
+  --segshadow: none;
+}
+
+.zr.light {
+  --bg: #F4F5F7;
+  --side: #ECEEF1;
+  --card: #FFFFFF;
+  --raised: #E9ECF0;
+  --line: #E1E4E9;
+  --line2: #D3D8DF;
+  --seg: #EEF0F3;
+  --segon: #FFFFFF;
+  --editor: #F8F9FB;
+  --row: #F1F3F5;
+  --tx: #15181D;
+  --tx2: #2E333A;
+  --dim: #5A616B;
+  --faint: #676E78;
+  --mute: #8A919B;
+  --gutter: #A9AFB8;
+  --accent: #0B8A55;
+  --accent-soft: rgba(11, 138, 85, 0.10);
+  --accent-ring: rgba(11, 138, 85, 0.08);
+  --onaccent: #FFFFFF;
+  --warn: #9A6200;
+  --err: #C93838;
+  --err-soft: rgba(201, 56, 56, 0.08);
+  --danger-line: #F0C9C9;
+  --segshadow: 0 1px 2px rgba(20, 24, 30, 0.12);
+}

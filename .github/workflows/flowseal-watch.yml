@@ -1,0 +1,36 @@
+name: Flowseal watch
+
+# Раз в неделю: скачать последний релиз Flowseal/zapret-discord-youtube и проверить,
+# что все стратегии по-прежнему разбираются. Если формат изменится, тест упадёт
+# раньше, чем пользователи увидят «запуск через .bat».
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  parse-latest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Download latest Flowseal release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo Flowseal/zapret-discord-youtube --pattern "*.zip" --dir flowseal
+          Expand-Archive (Get-ChildItem flowseal/*.zip).FullName -DestinationPath flowseal/x
+          $root = (Get-ChildItem flowseal/x -Recurse -Filter service.bat | Select-Object -First 1).DirectoryName
+          "ZAPRET_LIVE_DIR=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Parse strategies
+        working-directory: src-tauri
+        run: cargo test live_flowseal -- --ignored --nocapture
