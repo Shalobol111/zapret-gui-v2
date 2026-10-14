@@ -69,12 +69,17 @@ pub struct Bootstrap {
 
 #[tauri::command]
 pub fn bootstrap(app: AppHandle, state: State<AppState>) -> Bootstrap {
+    // Настройки читаются один раз и в отдельном операторе: временный MutexGuard живёт до конца
+    // оператора, и второй `lock()` в том же литерале (он выполнялся только при --minimized)
+    // навсегда вешал главный поток — команда синхронная. Так и зависал автозапуск.
+    let settings = state.settings.lock().unwrap().get().clone();
+    let start_hidden = state.start_hidden && settings.minimize_to_tray;
     Bootstrap {
-        settings: state.settings.lock().unwrap().get().clone(),
+        settings,
         is_admin: state.is_admin,
         system_theme: theme::system_mode(),
         app_version: app.package_info().version.to_string(),
-        start_hidden: state.start_hidden && state.settings.lock().unwrap().get().minimize_to_tray,
+        start_hidden,
     }
 }
 
