@@ -1055,8 +1055,9 @@ Telegram Desktop → 127.0.0.1:1443 → WebSocket к серверам Telegram (
 - Старые сборки (релизы 1.0.0 и 1.0.1, внутри версия 2.0.0) проверки обновлений не имеют — их пользователи
   один раз скачивают 2.1.0 вручную.
 
-Как выпускать обновление: поднять версию в tauri.conf.json, Cargo.toml и package.json → тег `vX.Y.Z` (или `X.Y.Z`)
-→ в релиз приложить `ZapretGUI_X.Y.Z_x64-setup.exe` и `ZapretGUI_X.Y.Z_portable.exe`. Pre-release программа
+Как выпускать обновление: поднять версию в tauri.conf.json, Cargo.toml и package.json, написать RELEASE_NOTES.md
+→ `git push` и тег `vX.Y.Z` → GitHub Actions (release.yml) соберёт `ZapretGUI_X.Y.Z_x64-setup.exe`,
+`ZapretGUI_X.Y.Z_portable.exe`, SHA256SUMS.txt и создаст черновик релиза с текстом RELEASE_NOTES.md → «Publish». Pre-release программа
 не видит (GitHub не отдаёт его как latest).
 
 Проверено вживую: чтение настоящего репозитория (`live_app_release`), замена portable-exe скриптом в папке с

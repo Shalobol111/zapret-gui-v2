@@ -45,7 +45,11 @@ jobs:
           Get-ChildItem out | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } |
             Set-Content out/SHA256SUMS.txt -Encoding utf8
 
+      # Черновик с текстом из RELEASE_NOTES.md (его же программа покажет в окне «Доступна новая
+      # версия»). Пока черновик не опубликован, программы обновление не видят.
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
+          name: ZapretGUI ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: out/*
