@@ -36,6 +36,8 @@ pub struct AppState {
     pub last_action: Mutex<Option<Instant>>,
     /// Состояние автопилота для подписи на Главной.
     pub autopilot: Mutex<crate::autopilot::Info>,
+    /// Telegram-прокси: последняя версия на GitHub и текущее действие.
+    pub tg: Mutex<crate::tgproxy::Shared>,
 }
 
 const ZAPRET_TTL: Duration = Duration::from_secs(5);
@@ -64,6 +66,7 @@ impl AppState {
             start_hidden: std::env::args().any(|a| a == "--minimized"),
             last_action: Mutex::new(None),
             autopilot: Mutex::new(Default::default()),
+            tg: Mutex::new(Default::default()),
         }
     }
 
@@ -121,6 +124,11 @@ impl AppState {
         } else {
             Ok(())
         }
+    }
+
+    /// Работает ли копия TgWsProxy из ZapretGUI (для перезапуска после смены настроек).
+    pub fn status_tg_running(&self) -> bool {
+        crate::tgproxy::status(&self.tg.lock().unwrap().clone()).running
     }
 
     /// Разбудить монитор: статус пересчитается и уйдёт в интерфейс сразу.

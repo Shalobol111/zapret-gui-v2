@@ -8,6 +8,7 @@ mod notify;
 mod settings;
 mod state;
 mod sys;
+mod tgproxy;
 mod tray;
 mod update;
 mod zapret;
@@ -75,6 +76,22 @@ fn startup(app: &AppHandle) {
     }
 
     let settings = st.settings.lock().unwrap().get().clone();
+    if tgproxy::installed() {
+        if settings.tg_autostart {
+            match tgproxy::start(st.is_admin) {
+                Ok(()) => {}
+                Err(e) => journal::warn(format!("Telegram-прокси не запущен: {e}")),
+            }
+        }
+        if settings.check_updates {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(Some(v)) = tgproxy::check(&app).await {
+                    journal::info(format!("Доступна новая версия TgWsProxy: {v}"));
+                }
+            });
+        }
+    }
     if settings.start_bypass_on_launch && st.is_admin && info.valid {
         start_bypass_on_launch(&st, &info, settings.last_strategy.as_deref());
     }
@@ -195,6 +212,16 @@ pub fn run() {
             commands::discord_info,
             commands::discord_step,
             commands::autopilot_check,
+            commands::tg_config,
+            commands::tg_config_save,
+            commands::tg_new_secret,
+            commands::tg_install,
+            commands::tg_check,
+            commands::tg_start,
+            commands::tg_stop,
+            commands::tg_restart,
+            commands::tg_close_external,
+            commands::tg_connect,
             commands::tests_cancel,
             commands::tests_last,
             commands::diag_run,

@@ -1,5 +1,6 @@
 //! Поиск и завершение процессов (winws.exe и др.).
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
@@ -11,6 +12,8 @@ pub struct ProcInfo {
     pub start_time: u64,
     /// Аргументы без имени программы.
     pub args: Vec<String>,
+    /// Путь к exe (если доступен).
+    pub exe: Option<PathBuf>,
 }
 
 static SYS: Mutex<Option<System>> = Mutex::new(None);
@@ -24,12 +27,20 @@ fn with_sys<T>(f: impl FnOnce(&mut System) -> T) -> T {
 /// Все процессы с данным именем (без учёта регистра). Командная строка читается
 /// только у них — опрос раз в 1,5 с почти не нагружает систему.
 pub fn find(name: &str) -> Vec<ProcInfo> {
+    find_any(&[name])
+}
+
+/// Процессы с любым из имён — за один опрос системы.
+pub fn find_any(names: &[&str]) -> Vec<ProcInfo> {
     with_sys(|sys| {
         sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
         let pids: Vec<Pid> = sys
             .processes()
             .values()
-            .filter(|p| p.name().to_string_lossy().eq_ignore_ascii_case(name))
+            .filter(|p| {
+                let n = p.name().to_string_lossy();
+                names.iter().any(|name| n.eq_ignore_ascii_case(name))
+            })
             .map(|p| p.pid())
             .collect();
         if pids.is_empty() {
@@ -38,7 +49,7 @@ pub fn find(name: &str) -> Vec<ProcInfo> {
         sys.refresh_processes_specifics(
             ProcessesToUpdate::Some(&pids),
             true,
-            ProcessRefreshKind::nothing().with_cmd(UpdateKind::OnlyIfNotSet),
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::OnlyIfNotSet).with_exe(UpdateKind::OnlyIfNotSet),
         );
         pids.iter()
             .filter_map(|pid| sys.process(*pid))
@@ -46,6 +57,7 @@ pub fn find(name: &str) -> Vec<ProcInfo> {
                 pid: p.pid().as_u32(),
                 start_time: p.start_time(),
                 args: p.cmd().iter().skip(1).map(|a| a.to_string_lossy().into_owned()).collect(),
+                exe: p.exe().map(|e| e.to_path_buf()),
             })
             .collect()
     })
@@ -64,5 +76,14 @@ pub fn kill_all(name: &str) -> usize {
             .filter(|p| p.name().to_string_lossy().eq_ignore_ascii_case(name))
             .filter(|p| p.kill())
             .count()
+    })
+}
+
+/// Завершает процесс по PID; `true` — если он был и завершён.
+pub fn kill_pid(pid: u32) -> bool {
+    with_sys(|sys| {
+        let pid = Pid::from_u32(pid);
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, ProcessRefreshKind::nothing());
+        sys.process(pid).is_some_and(|p| p.kill())
     })
 }

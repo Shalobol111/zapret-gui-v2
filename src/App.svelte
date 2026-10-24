@@ -6,11 +6,12 @@
   import Main from "./screens/Main.svelte";
   import Check from "./screens/Check.svelte";
   import Lists from "./screens/Lists.svelte";
+  import Telegram from "./screens/Telegram.svelte";
   import Settings from "./screens/Settings.svelte";
   import { app, effectiveMode, go } from "./lib/state.svelte";
   import type { Screen } from "./lib/types";
 
-  const ORDER: Screen[] = ["main", "check", "lists", "settings"];
+  const ORDER: Screen[] = ["main", "check", "lists", "telegram", "settings"];
   let width = $state(window.innerWidth);
 
   // Класс темы на <html>: CSS-переходы из макета анимируют смену за 0,5 с.
@@ -38,6 +39,7 @@
   <main hidden={app.screen !== "main"}><Main /></main>
   <main hidden={app.screen !== "check"}><Check /></main>
   <main hidden={app.screen !== "lists"}><Lists /></main>
+  <main hidden={app.screen !== "telegram"} class="scroll"><Telegram /></main>
   <main hidden={app.screen !== "settings"} class="scroll"><Settings /></main>
 </div>
 {#if app.settings && !app.settings.onboardingDone}<Onboarding />{/if}

@@ -18,6 +18,7 @@ import type {
   SiteReport,
   TestKind,
   TestRun,
+  TgConfig,
   GameMode,
   HostsPlan,
   IpsetMode,
@@ -122,6 +123,24 @@ export const discordStep = (step: DiscordStep, ids: string[] = []) => call<Disco
 // ── Автопилот ──────────────────────────────────────────────────
 export const autopilotCheck = () => call<void>("autopilot_check");
 
+// ── Telegram-прокси ────────────────────────────────────────────
+export const tgConfig = () => call<TgConfig>("tg_config");
+export const tgConfigSave = (config: Omit<TgConfig, "link">) => call<TgConfig>("tg_config_save", { config });
+export const tgNewSecret = () => call<string>("tg_new_secret");
+export const tgInstall = () => call<string>("tg_install");
+export const tgCheck = () => call<string | null>("tg_check");
+export const tgStart = () => call<void>("tg_start");
+export const tgStop = () => call<void>("tg_stop");
+export const tgRestart = () => call<void>("tg_restart");
+export const tgCloseExternal = () => call<void>("tg_close_external");
+export const tgConnect = () => call<void>("tg_connect");
+
+export async function writeClipboard(text: string): Promise<void> {
+  if (!inTauri) return navigator.clipboard.writeText(text);
+  const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+  await writeText(text);
+}
+
 // ── Списки ─────────────────────────────────────────────────────
 export const listsIndex = () => call<ListInfo[]>("lists_index");
 export const listRead = (id: string) => call<ListData>("list_read", { id });
@@ -182,7 +201,7 @@ export const fakesSet = (kind: FakeKind, name: string) => call<void>("fakes_set"
 export const ipsetCount = () => call<number>("ipset_count");
 export const ipsetUpdate = () => call<number>("ipset_update");
 export const gamePortsSet = (tcp: string, udp: string) => call<void>("game_ports_set", { tcp, udp });
-export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns") => call<void>("open_path", { target });
+export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns" | "tglog" | "tgreleases") => call<void>("open_path", { target });
 
 // ── Настройки GUI ──────────────────────────────────────────────
 export const settingsExport = (path: string) => call<void>("settings_export", { path });

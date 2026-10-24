@@ -12,7 +12,8 @@ export type IconName =
   | "sun"
   | "moon"
   | "chevronDown"
-  | "play";
+  | "play"
+  | "send";
 
 export interface IconDef {
   /** Элементы внутри <svg viewBox="0 0 24 24">. */
@@ -22,6 +23,12 @@ export interface IconDef {
 }
 
 export const ICONS: Record<IconName, IconDef> = {
+  // Lucide «send» — бумажный самолётик (Telegram).
+  send: {
+    body:
+      '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>' +
+      '<path d="m21.854 2.147-10.94 10.939"/>',
+  },
   logo: { body: '<path d="M4 7h16M4 17h16"/><path d="M17 4l3 3-3 3"/><path d="M7 14l-3 3 3 3"/>' },
   power: { body: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>' },
   activity: { body: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },

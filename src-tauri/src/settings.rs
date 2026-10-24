@@ -50,6 +50,8 @@ pub struct Settings {
     pub onboarding_done: bool,
     /// Включать обход последней стратегией при запуске программы (вариант мастера «Запускать программу»).
     pub start_bypass_on_launch: bool,
+    /// Запускать Telegram-прокси (TgWsProxy) вместе с ZapretGUI.
+    pub tg_autostart: bool,
 }
 
 impl Default for Settings {
@@ -71,6 +73,7 @@ impl Default for Settings {
             autopilot: crate::autopilot::Mode::Warn,
             onboarding_done: false,
             start_bypass_on_launch: false,
+            tg_autostart: false,
         }
     }
 }

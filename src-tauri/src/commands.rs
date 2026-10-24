@@ -563,8 +563,18 @@ pub fn open_path(target: String, state: State<AppState>) -> Res<()> {
         "logs" => crate::settings::data_dir().join("logs"),
         "results" => state.require_root()?.join("utils").join("test results"),
         // Фиксированные адреса: страница релизов (браузер) и сетевые параметры Windows (Secure DNS).
-        "releases" | "dns" => {
-            let target = if target == "dns" { "ms-settings:network" } else { updater::RELEASES_URL };
+        // Лог TgWsProxy — файлом (откроется в Блокноте), папку — если лога ещё нет.
+        "tglog" => {
+            let log = crate::tgproxy::log_file();
+            let target = if log.is_file() { log } else { crate::tgproxy::dir() };
+            return crate::sys::cmd::hidden("explorer.exe").arg(target).spawn().map(|_| ()).map_err(|e| e.to_string());
+        }
+        "releases" | "dns" | "tgreleases" => {
+            let target = match target.as_str() {
+                "dns" => "ms-settings:network",
+                "tgreleases" => crate::tgproxy::RELEASES_URL,
+                _ => updater::RELEASES_URL,
+            };
             return crate::sys::cmd::hidden("explorer.exe").arg(target).spawn().map(|_| ()).map_err(|e| e.to_string());
         }
         _ => return Err("неизвестная папка".into()),
@@ -889,4 +899,90 @@ pub async fn discord_step(app: AppHandle, step: discord::Step, ids: Vec<String>)
 #[tauri::command]
 pub fn autopilot_check() {
     crate::autopilot::check_now();
+}
+
+// ── Telegram-прокси ────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgConfig {
+    #[serde(flatten)]
+    config: crate::tgproxy::Config,
+    link: Option<String>,
+}
+
+fn tg_view(c: crate::tgproxy::Config) -> TgConfig {
+    let link = crate::tgproxy::valid_secret(&c.secret).then(|| crate::tgproxy::link(&c));
+    TgConfig { config: c, link }
+}
+
+#[tauri::command]
+pub async fn tg_config(app: AppHandle) -> Res<TgConfig> {
+    blocking(&app, |_| {
+        let c = if crate::tgproxy::installed() { crate::tgproxy::ensure_config()? } else { crate::tgproxy::config() };
+        Ok(tg_view(c))
+    })
+    .await
+}
+
+/// Сохранить настройки прокси; работающий прокси перезапускается.
+#[tauri::command]
+pub async fn tg_config_save(app: AppHandle, config: crate::tgproxy::Config) -> Res<TgConfig> {
+    blocking(&app, move |st| {
+        let saved = crate::tgproxy::save_config(&config)?;
+        journal::ok(format!("Настройки Telegram-прокси сохранены · порт {}", saved.port));
+        if st.status_tg_running() {
+            crate::tgproxy::restart(st.is_admin)?;
+        }
+        Ok(tg_view(saved))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn tg_new_secret() -> String {
+    crate::tgproxy::regenerate_secret()
+}
+
+#[tauri::command]
+pub async fn tg_install(app: AppHandle) -> Res<String> {
+    crate::tgproxy::install(app).await
+}
+
+#[tauri::command]
+pub async fn tg_check(app: AppHandle) -> Res<Option<String>> {
+    crate::tgproxy::check(&app).await
+}
+
+#[tauri::command]
+pub async fn tg_start(app: AppHandle) -> Res<()> {
+    blocking(&app, |st| {
+        crate::tgproxy::start(st.is_admin).inspect_err(|e| journal::err(format!("Telegram-прокси: {e}")))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn tg_stop(app: AppHandle) -> Res<()> {
+    blocking(&app, |_| crate::tgproxy::stop()).await
+}
+
+#[tauri::command]
+pub async fn tg_restart(app: AppHandle) -> Res<()> {
+    blocking(&app, |st| crate::tgproxy::restart(st.is_admin)).await
+}
+
+/// Закрыть отдельно запущенный TgWsProxy и запустить копию ZapretGUI.
+#[tauri::command]
+pub async fn tg_close_external(app: AppHandle) -> Res<()> {
+    blocking(&app, |st| {
+        crate::tgproxy::close_external()?;
+        crate::tgproxy::start(st.is_admin)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn tg_connect(app: AppHandle) -> Res<()> {
+    blocking(&app, |_| crate::tgproxy::connect_telegram()).await
 }

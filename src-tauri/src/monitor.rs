@@ -62,6 +62,7 @@ pub struct Status {
     pub tests_running: bool,
     pub update: crate::zapret::updater::Update,
     pub autopilot: crate::autopilot::Info,
+    pub telegram: crate::tgproxy::Status,
 }
 
 pub fn compute(state: &AppState) -> Status {
@@ -137,7 +138,19 @@ pub fn compute(state: &AppState) -> Status {
     let tests_running = state.tests.lock().unwrap().as_ref().is_some_and(|r| r.running);
     let update = state.update.lock().unwrap().clone();
     let autopilot = state.autopilot.lock().unwrap().clone();
-    Status { zapret, bypass, service: svc, filters, is_admin: state.is_admin, tests_running, update, autopilot }
+    let tg_shared = state.tg.lock().unwrap().clone();
+    let telegram = crate::tgproxy::status(&tg_shared);
+    Status {
+        zapret,
+        bypass,
+        service: svc,
+        filters,
+        is_admin: state.is_admin,
+        tests_running,
+        update,
+        autopilot,
+        telegram,
+    }
 }
 
 /// Обход был включён и выключился сам: winws упал, служба остановилась, внешний winws закрыли.

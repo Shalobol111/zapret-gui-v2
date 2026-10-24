@@ -21,6 +21,7 @@ export interface Settings {
   autopilot: AutopilotMode;
   onboardingDone: boolean;
   startBypassOnLaunch: boolean;
+  tgAutostart: boolean;
 }
 
 // ── Автопилот (autopilot.rs) ───────────────────────────────────
@@ -42,7 +43,7 @@ export interface Bootstrap {
   startHidden: boolean;
 }
 
-export type Screen = "main" | "check" | "lists" | "settings";
+export type Screen = "main" | "check" | "lists" | "telegram" | "settings";
 
 export interface StrategyInfo {
   name: string;
@@ -103,6 +104,29 @@ export interface Status {
   testsRunning: boolean;
   update: UpdateInfo;
   autopilot: AutopilotInfo;
+  telegram: TgStatus;
+}
+
+// ── Telegram-прокси (tgproxy.rs) ───────────────────────────────
+export interface TgStatus {
+  installed: boolean;
+  version: string | null;
+  latest: string | null;
+  running: boolean;
+  listening: boolean;
+  port: number;
+  startedAt: number | null;
+  external: string | null;
+  busy: string | null;
+  progress: number | null;
+}
+
+export interface TgConfig {
+  port: number;
+  secret: string;
+  dcIp: string[];
+  cfproxy: boolean;
+  link: string | null;
 }
 
 export type LogLevel = "ok" | "info" | "warn" | "err";
