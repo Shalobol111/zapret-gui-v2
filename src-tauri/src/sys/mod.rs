@@ -6,4 +6,5 @@ pub mod process;
 pub mod schtasks;
 pub mod scm;
 pub mod services;
+pub mod shell;
 pub mod theme;

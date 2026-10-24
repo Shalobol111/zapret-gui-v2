@@ -374,9 +374,13 @@ pub fn connect_telegram() -> Result<(), String> {
             .into());
     }
     let cfg = ensure_config()?;
-    // Через проводник: Telegram откроется с обычными правами.
-    cmd::hidden("explorer.exe").arg(link(&cfg)).spawn().map_err(|e| e.to_string())?;
-    Ok(())
+    open_url_unelevated(&link(&cfg))
+}
+
+/// Открыть ссылку от имени пользователя (без прав администратора ZapretGUI): Telegram, если он
+/// ещё не запущен, стартует с обычными правами.
+pub fn open_url_unelevated(url: &str) -> Result<(), String> {
+    crate::sys::shell::open_unelevated(url)
 }
 
 // ── Скачивание и обновление ────────────────────────────────────
