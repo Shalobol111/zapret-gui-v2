@@ -50,6 +50,9 @@ async function start() {
   await api.onNavGoto((s) => {
     if (s === "main" || s === "check" || s === "lists" || s === "telegram" || s === "settings") go(s);
   });
+  await api.onAppUpdatePrompt(() => {
+    app.updatePrompt = true;
+  });
   await api.onQuitRequest(async () => {
     if (await canQuit()) await api.quit();
   });

@@ -2,6 +2,7 @@
 // скриншотов) работает заглушка из mock.ts.
 
 import type {
+  AppUpdateInfo,
   Bootstrap,
   DiagItem,
   DiscordInfo,
@@ -141,6 +142,12 @@ export async function writeClipboard(text: string): Promise<void> {
   await writeText(text);
 }
 
+// ── Обновление ZapretGUI ───────────────────────────────────────
+export const appUpdateCheck = () => call<AppUpdateInfo>("app_update_check");
+export const appUpdateInstall = () => call<void>("app_update_install");
+/** Уведомление Windows «Доступна ZapretGUI …» → кнопка «Установить». */
+export const onAppUpdatePrompt = (cb: () => void) => on<null>("app-update://prompt", () => cb());
+
 // ── Списки ─────────────────────────────────────────────────────
 export const listsIndex = () => call<ListInfo[]>("lists_index");
 export const listRead = (id: string) => call<ListData>("list_read", { id });
@@ -201,7 +208,7 @@ export const fakesSet = (kind: FakeKind, name: string) => call<void>("fakes_set"
 export const ipsetCount = () => call<number>("ipset_count");
 export const ipsetUpdate = () => call<number>("ipset_update");
 export const gamePortsSet = (tcp: string, udp: string) => call<void>("game_ports_set", { tcp, udp });
-export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns" | "tglog" | "tgreleases") => call<void>("open_path", { target });
+export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns" | "tglog" | "tgreleases" | "appreleases") => call<void>("open_path", { target });
 
 // ── Настройки GUI ──────────────────────────────────────────────
 export const settingsExport = (path: string) => call<void>("settings_export", { path });

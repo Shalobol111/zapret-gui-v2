@@ -22,6 +22,8 @@ export interface Settings {
   onboardingDone: boolean;
   startBypassOnLaunch: boolean;
   tgAutostart: boolean;
+  resumeBypass: string | null;
+  appUpdateDismissed: string | null;
 }
 
 // ── Автопилот (autopilot.rs) ───────────────────────────────────
@@ -105,6 +107,19 @@ export interface Status {
   update: UpdateInfo;
   autopilot: AutopilotInfo;
   telegram: TgStatus;
+  appUpdate: AppUpdateInfo;
+}
+
+// ── Обновление ZapretGUI (selfupdate.rs) ───────────────────────
+export interface AppUpdateInfo {
+  state: "idle" | "checking" | "current" | "available" | "downloading" | "installing" | "error";
+  current: string;
+  latest: string | null;
+  notes: string | null;
+  url: string | null;
+  progress: number | null;
+  error: string | null;
+  portable: boolean;
 }
 
 // ── Telegram-прокси (tgproxy.rs) ───────────────────────────────

@@ -569,10 +569,11 @@ pub fn open_path(target: String, state: State<AppState>) -> Res<()> {
             let target = if log.is_file() { log } else { crate::tgproxy::dir() };
             return crate::sys::cmd::hidden("explorer.exe").arg(target).spawn().map(|_| ()).map_err(|e| e.to_string());
         }
-        "releases" | "dns" | "tgreleases" => {
+        "releases" | "dns" | "tgreleases" | "appreleases" => {
             let target = match target.as_str() {
                 "dns" => "ms-settings:network",
                 "tgreleases" => crate::tgproxy::RELEASES_URL,
+                "appreleases" => crate::selfupdate::RELEASES_URL,
                 _ => updater::RELEASES_URL,
             };
             return crate::sys::cmd::hidden("explorer.exe").arg(target).spawn().map(|_| ()).map_err(|e| e.to_string());
@@ -985,4 +986,19 @@ pub async fn tg_close_external(app: AppHandle) -> Res<()> {
 #[tauri::command]
 pub async fn tg_connect(app: AppHandle) -> Res<()> {
     blocking(&app, |_| crate::tgproxy::connect_telegram()).await
+}
+
+// ── Обновление ZapretGUI ───────────────────────────────────────
+
+#[tauri::command]
+pub async fn app_update_check(app: AppHandle) -> Res<crate::selfupdate::Info> {
+    Ok(crate::selfupdate::check(&app, true).await)
+}
+
+/// Скачать и установить новую версию; при успехе программа закроется и запустится заново.
+#[tauri::command]
+pub async fn app_update_install(app: AppHandle) -> Res<()> {
+    app.state::<AppState>().require_admin()?;
+    app.state::<AppState>().require_idle()?;
+    crate::selfupdate::install(app).await
 }

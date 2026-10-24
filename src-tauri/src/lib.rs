@@ -5,6 +5,7 @@ mod log;
 mod monitor;
 mod net;
 mod notify;
+mod selfupdate;
 mod settings;
 mod state;
 mod sys;
@@ -42,6 +43,32 @@ fn start_bypass_on_launch(st: &AppState, info: &zapret::layout::ZapretInfo, last
             Err(e) => journal::err(format!("Не удалось включить обход при запуске: {e}")),
         }
     }
+}
+
+/// Проверка новой версии ZapretGUI: через 10 с после запуска и раз в 12 часов (если включена
+/// «Проверять обновления»). О каждой новой версии — одно уведомление Windows.
+fn start_app_update_checks(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("app-update".into())
+        .spawn(move || {
+            let mut notified: Option<String> = None;
+            std::thread::sleep(Duration::from_secs(10));
+            loop {
+                let enabled = app.state::<AppState>().settings.lock().unwrap().get().check_updates;
+                if enabled {
+                    let info = tauri::async_runtime::block_on(selfupdate::check(&app, false));
+                    if let Some(v) = info.latest.filter(|_| info.state == selfupdate::State::Available) {
+                        if notified.as_deref() != Some(v.as_str()) {
+                            notify::show_app_update(&app, &v);
+                            notified = Some(v);
+                        }
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(12 * 3600));
+            }
+        })
+        .expect("не удалось запустить поток app-update");
 }
 
 /// Первые записи журнала и автопоиск папки zapret, если она не задана.
@@ -92,9 +119,17 @@ fn startup(app: &AppHandle) {
             });
         }
     }
-    if settings.start_bypass_on_launch && st.is_admin && info.valid {
+    selfupdate::cleanup();
+    // После обновления ZapretGUI — включить ручной обход, который работал до перезапуска.
+    if let Some(name) = settings.resume_bypass.clone() {
+        let _ = st.settings.lock().unwrap().patch(&json!({ "resumeBypass": null }));
+        if st.is_admin && info.valid {
+            start_bypass_on_launch(&st, &info, Some(&name));
+        }
+    } else if settings.start_bypass_on_launch && st.is_admin && info.valid {
         start_bypass_on_launch(&st, &info, settings.last_strategy.as_deref());
     }
+    start_app_update_checks(app);
     // Автозапуск: обновляем задачу, если программу перенесли в другую папку.
     if settings.autostart && st.is_admin {
         if let Ok(exe) = std::env::current_exe() {
@@ -222,6 +257,8 @@ pub fn run() {
             commands::tg_restart,
             commands::tg_close_external,
             commands::tg_connect,
+            commands::app_update_check,
+            commands::app_update_install,
             commands::tests_cancel,
             commands::tests_last,
             commands::diag_run,

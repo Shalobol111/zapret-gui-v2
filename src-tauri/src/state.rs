@@ -38,6 +38,8 @@ pub struct AppState {
     pub autopilot: Mutex<crate::autopilot::Info>,
     /// Telegram-прокси: последняя версия на GitHub и текущее действие.
     pub tg: Mutex<crate::tgproxy::Shared>,
+    /// Обновление самой ZapretGUI.
+    pub self_update: Mutex<crate::selfupdate::Info>,
 }
 
 const ZAPRET_TTL: Duration = Duration::from_secs(5);
@@ -67,6 +69,7 @@ impl AppState {
             last_action: Mutex::new(None),
             autopilot: Mutex::new(Default::default()),
             tg: Mutex::new(Default::default()),
+            self_update: Mutex::new(Default::default()),
         }
     }
 

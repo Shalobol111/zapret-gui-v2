@@ -63,6 +63,7 @@ pub struct Status {
     pub update: crate::zapret::updater::Update,
     pub autopilot: crate::autopilot::Info,
     pub telegram: crate::tgproxy::Status,
+    pub app_update: crate::selfupdate::Info,
 }
 
 pub fn compute(state: &AppState) -> Status {
@@ -140,6 +141,7 @@ pub fn compute(state: &AppState) -> Status {
     let autopilot = state.autopilot.lock().unwrap().clone();
     let tg_shared = state.tg.lock().unwrap().clone();
     let telegram = crate::tgproxy::status(&tg_shared);
+    let app_update = state.self_update.lock().unwrap().clone();
     Status {
         zapret,
         bypass,
@@ -150,6 +152,7 @@ pub fn compute(state: &AppState) -> Status {
         update,
         autopilot,
         telegram,
+        app_update,
     }
 }
 

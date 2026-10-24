@@ -26,7 +26,14 @@
     <div class="logo"><Icon name="logo" size={16} stroke={2} /></div>
     <div class="brand-text fade">
       <span class="name">zapret</span>
-      <span class="ver">GUI 2.0</span>
+      <span class="ver"
+        >GUI {app.appVersion.split(".").slice(0, 2).join(".") || "2"}{#if app.status?.appUpdate.state === "available"}<button
+            type="button"
+            class="upd"
+            title={`Доступна версия ${app.status.appUpdate.latest}`}
+            onclick={() => (app.updatePrompt = true)}>· обновить</button
+          >{/if}</span
+      >
     </div>
   </div>
 
@@ -69,6 +76,14 @@
 </nav>
 
 <style>
+  .upd {
+    margin-left: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: var(--warn);
+  }
   nav {
     width: 208px;
     flex-shrink: 0;

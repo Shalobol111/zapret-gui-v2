@@ -52,6 +52,10 @@ pub struct Settings {
     pub start_bypass_on_launch: bool,
     /// Запускать Telegram-прокси (TgWsProxy) вместе с ZapretGUI.
     pub tg_autostart: bool,
+    /// Стратегия ручного обхода, которую включить после перезапуска при обновлении ZapretGUI.
+    pub resume_bypass: Option<String>,
+    /// Версия ZapretGUI, для которой окно «Доступна новая версия» закрыли кнопкой «Позже».
+    pub app_update_dismissed: Option<String>,
 }
 
 impl Default for Settings {
@@ -74,6 +78,8 @@ impl Default for Settings {
             onboarding_done: false,
             start_bypass_on_launch: false,
             tg_autostart: false,
+            resume_bypass: None,
+            app_update_dismissed: None,
         }
     }
 }

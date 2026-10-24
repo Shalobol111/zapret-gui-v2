@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppUpdateDialog from "./components/AppUpdateDialog.svelte";
   import ConfirmHost from "./components/ConfirmHost.svelte";
   import Onboarding from "./components/Onboarding.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -43,6 +44,7 @@
   <main hidden={app.screen !== "settings"} class="scroll"><Settings /></main>
 </div>
 {#if app.settings && !app.settings.onboardingDone}<Onboarding />{/if}
+<AppUpdateDialog />
 <ToastHost />
 <ConfirmHost />
 

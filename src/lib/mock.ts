@@ -34,6 +34,8 @@ let settings: Settings = {
   onboardingDone: params.get("wizard") !== "1",
   startBypassOnLaunch: false,
   tgAutostart: false,
+  resumeBypass: null,
+  appUpdateDismissed: null,
 };
 try {
   const raw = localStorage.getItem(KEY);
@@ -75,7 +77,28 @@ const status: Status = {
       : { state: "current", latest: "1.10.3", error: null, stage: null, progress: null },
   autopilot: mockAutopilot(params.get("ap")),
   telegram: mockTelegram(params.get("tg")),
+  appUpdate: mockAppUpdate(params.get("au")),
 };
+
+function releaseNotes() {
+  return `## ZapretGUI 2.1.0
+
+### Что нового
+- **Telegram** — обход блокировки Telegram через [TgWsProxy](https://github.com/Flowseal/tg-ws-proxy): подключение одной кнопкой.
+- **Обновление программы** — уведомление о новой версии и установка по кнопке.
+- Исправлено зависание значка в трее после автозапуска.`;
+}
+
+/** ?au=available|current|error — обновление ZapretGUI. */
+function mockAppUpdate(au: string | null): Status["appUpdate"] {
+  const base = { state: "idle" as Status["appUpdate"]["state"], current: "2.0.0", latest: null as string | null, notes: null as string | null,
+    url: null as string | null, progress: null as number | null, error: null as string | null, portable: params.get("portable") === "1" };
+  if (au === "available")
+    return { ...base, state: "available", latest: "2.1.0", notes: releaseNotes(), url: "https://github.com/Shalobol111/zapret-gui-v2/releases/tag/v2.1.0" };
+  if (au === "current") return { ...base, state: "current" };
+  if (au === "error") return { ...base, state: "error", error: "сервер не отвечает (таймаут)" };
+  return base;
+}
 
 /** ?tg=none|off|on|external|update — состояние Telegram-прокси. */
 function mockTelegram(tg: string | null): Status["telegram"] {
@@ -594,6 +617,21 @@ export async function call<T>(cmd: string, args: Record<string, unknown> = {}): 
         await wait(600);
         return;
       case "tg_connect":
+        return;
+      case "app_update_check":
+        await wait(800);
+        status.appUpdate = { ...mockAppUpdate("available") };
+        changed();
+        return status.appUpdate;
+      case "app_update_install":
+        requireAdmin();
+        for (let p = 0; p <= 100; p += 20) {
+          status.appUpdate = { ...status.appUpdate, state: "downloading", progress: p };
+          changed();
+          await wait(350);
+        }
+        status.appUpdate = { ...status.appUpdate, state: "installing", progress: null };
+        changed();
         return;
       case "autopilot_check":
         status.autopilot = { ...status.autopilot, phase: "checking" };

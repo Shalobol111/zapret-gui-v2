@@ -125,6 +125,27 @@ pub fn show_pick(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
+/// Вышла новая версия ZapretGUI: кнопка «Установить» открывает окно с предложением обновиться.
+pub fn show_app_update(app: &AppHandle, version: &str) {
+    if !app.state::<AppState>().settings.lock().unwrap().get().notifications {
+        return;
+    }
+    let handle = app.clone();
+    let r = Toast::new(&app_id(app))
+        .title(&format!("Доступна ZapretGUI {version}"))
+        .text1("Новая версия программы готова к установке — это займёт меньше минуты.")
+        .add_button("Установить", "install")
+        .on_activated(move |_| {
+            crate::tray::show_main(&handle);
+            let _ = handle.emit("app-update://prompt", ());
+            Ok(())
+        })
+        .show();
+    if let Err(e) = r {
+        tracing::warn!("Уведомление не показано: {e}");
+    }
+}
+
 /// Первый раз окно спрятано в трей — подсказать, что программа работает.
 pub fn tray_hint_once(app: &AppHandle) {
     let st = app.state::<AppState>();
