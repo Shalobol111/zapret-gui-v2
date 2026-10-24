@@ -12,6 +12,7 @@
     { id: "main", label: "Главная", icon: "power" },
     { id: "check", label: "Проверка", icon: "activity" },
     { id: "lists", label: "Списки", icon: "list" },
+    { id: "telegram", label: "Telegram", icon: "send" },
     { id: "settings", label: "Настройки", icon: "settings" },
   ];
 
@@ -25,7 +26,14 @@
     <div class="logo"><Icon name="logo" size={16} stroke={2} /></div>
     <div class="brand-text fade">
       <span class="name">zapret</span>
-      <span class="ver">GUI 2.0</span>
+      <span class="ver"
+        >GUI {app.appVersion.split(".").slice(0, 2).join(".") || "2"}{#if app.status?.appUpdate.state === "available"}<button
+            type="button"
+            class="upd"
+            title={`Доступна версия ${app.status.appUpdate.latest}`}
+            onclick={() => (app.updatePrompt = true)}>· обновить</button
+          >{/if}</span
+      >
     </div>
   </div>
 
@@ -44,6 +52,9 @@
       {#if it.id === "main" && bypassOn()}
         <span class="spacer"></span>
         <span class="run-dot" aria-label="обход включён"></span>
+      {:else if it.id === "telegram" && app.status?.telegram.running}
+        <span class="spacer"></span>
+        <span class="run-dot" aria-label="прокси работает"></span>
       {:else if it.id === "lists" && app.listsDirty}
         <span class="spacer"></span>
         <span class="run-dot warn" aria-label="есть несохранённые изменения"></span>
@@ -65,6 +76,14 @@
 </nav>
 
 <style>
+  .upd {
+    margin-left: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: var(--warn);
+  }
   nav {
     width: 208px;
     flex-shrink: 0;

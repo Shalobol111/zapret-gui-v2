@@ -33,6 +33,9 @@ let settings: Settings = {
   autopilot: (params.get("apmode") as Settings["autopilot"]) ?? "warn",
   onboardingDone: params.get("wizard") !== "1",
   startBypassOnLaunch: false,
+  tgAutostart: false,
+  resumeBypass: null,
+  appUpdateDismissed: null,
 };
 try {
   const raw = localStorage.getItem(KEY);
@@ -73,7 +76,52 @@ const status: Status = {
       ? { state: "available", latest: "1.10.4", error: null, stage: null, progress: null }
       : { state: "current", latest: "1.10.3", error: null, stage: null, progress: null },
   autopilot: mockAutopilot(params.get("ap")),
+  telegram: mockTelegram(params.get("tg")),
+  appUpdate: mockAppUpdate(params.get("au")),
 };
+
+function releaseNotes() {
+  return `## ZapretGUI 2.1.0
+
+### Что нового
+- **Telegram** — обход блокировки Telegram через [TgWsProxy](https://github.com/Flowseal/tg-ws-proxy): подключение одной кнопкой.
+- **Обновление программы** — уведомление о новой версии и установка по кнопке.
+- Исправлено зависание значка в трее после автозапуска.`;
+}
+
+/** ?au=available|current|error — обновление ZapretGUI. */
+function mockAppUpdate(au: string | null): Status["appUpdate"] {
+  const base = { state: "idle" as Status["appUpdate"]["state"], current: "2.0.0", latest: null as string | null, notes: null as string | null,
+    url: null as string | null, progress: null as number | null, error: null as string | null, portable: params.get("portable") === "1" };
+  if (au === "available")
+    return { ...base, state: "available", latest: "2.1.0", notes: releaseNotes(), url: "https://github.com/Shalobol111/zapret-gui-v2/releases/tag/v2.1.0" };
+  if (au === "current") return { ...base, state: "current" };
+  if (au === "error") return { ...base, state: "error", error: "сервер не отвечает (таймаут)" };
+  return base;
+}
+
+/** ?tg=none|off|on|external|update — состояние Telegram-прокси. */
+function mockTelegram(tg: string | null): Status["telegram"] {
+  const base = {
+    installed: true, version: "1.11.2", latest: null as string | null, running: false, listening: false, port: 1443,
+    startedAt: null as number | null, external: null as string | null, busy: null as string | null, progress: null as number | null,
+  };
+  switch (tg) {
+    case "none":
+      return { ...base, installed: false, version: null };
+    case "on":
+      return { ...base, running: true, listening: true, startedAt: Date.now() - 754_000 };
+    case "external":
+      return { ...base, external: "C:\Users\me\Downloads\TgWsProxy_windows.exe" };
+    case "update":
+      return { ...base, running: true, listening: true, startedAt: Date.now() - 3_600_000, latest: "1.12.0" };
+    default:
+      return base;
+  }
+}
+
+let tgCfg = { port: 1443, secret: "3f9c2a71d04e8b56a1c7e9d2b4f60a85", dcIp: ["2:149.154.167.220", "4:149.154.167.220"], cfproxy: true };
+const tgView = () => ({ ...tgCfg, link: `tg://proxy?server=127.0.0.1&port=${tgCfg.port}&secret=dd${tgCfg.secret}` });
 
 /** ?ap=ok|fail|confirming|picking|switched|offline — подпись автопилота на Главной. */
 function mockAutopilot(ap: string | null): Status["autopilot"] {
@@ -530,6 +578,61 @@ export async function call<T>(cmd: string, args: Record<string, unknown> = {}): 
         }
         return null;
       }
+      case "tg_config":
+        return tgView();
+      case "tg_config_save":
+        tgCfg = { ...(args.config as typeof tgCfg) };
+        status.telegram = { ...status.telegram, port: tgCfg.port };
+        changed();
+        return tgView();
+      case "tg_new_secret":
+        return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+      case "tg_install":
+        for (let p = 0; p <= 100; p += 25) {
+          status.telegram = { ...status.telegram, busy: "Скачивание TgWsProxy", progress: p };
+          changed();
+          await wait(400);
+        }
+        status.telegram = { ...status.telegram, installed: true, version: "1.11.2", latest: null, busy: null, progress: null };
+        changed();
+        log("ok", "TgWsProxy 1.11.2 установлен");
+        return "TgWsProxy 1.11.2 установлен";
+      case "tg_check":
+        return status.telegram.latest;
+      case "tg_start":
+      case "tg_close_external":
+        status.telegram = { ...status.telegram, external: null, running: true, listening: false, startedAt: Date.now() };
+        changed();
+        await wait(1200);
+        status.telegram = { ...status.telegram, listening: true };
+        changed();
+        log("ok", "Telegram-прокси запущен · 127.0.0.1:1443");
+        return;
+      case "tg_stop":
+        status.telegram = { ...status.telegram, running: false, listening: false, startedAt: null };
+        changed();
+        log("info", "Telegram-прокси остановлен");
+        return;
+      case "tg_restart":
+        await wait(600);
+        return;
+      case "tg_connect":
+        return;
+      case "app_update_check":
+        await wait(800);
+        status.appUpdate = { ...mockAppUpdate("available") };
+        changed();
+        return status.appUpdate;
+      case "app_update_install":
+        requireAdmin();
+        for (let p = 0; p <= 100; p += 20) {
+          status.appUpdate = { ...status.appUpdate, state: "downloading", progress: p };
+          changed();
+          await wait(350);
+        }
+        status.appUpdate = { ...status.appUpdate, state: "installing", progress: null };
+        changed();
+        return;
       case "autopilot_check":
         status.autopilot = { ...status.autopilot, phase: "checking" };
         changed();

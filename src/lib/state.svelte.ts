@@ -17,6 +17,8 @@ export const app = $state({
   listsDirty: false,
   /** Быстрый подбор запущен «Починить Discord» — он сам применит итог, тост TestsCard не нужен. */
   pickOwner: null as "discord" | "wizard" | null,
+  /** Показать окно «Доступна новая версия» (клик по уведомлению или кнопка в Настройках). */
+  updatePrompt: false,
 });
 
 const JOURNAL_LIMIT = 1000;

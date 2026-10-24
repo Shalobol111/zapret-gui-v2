@@ -21,6 +21,9 @@ export interface Settings {
   autopilot: AutopilotMode;
   onboardingDone: boolean;
   startBypassOnLaunch: boolean;
+  tgAutostart: boolean;
+  resumeBypass: string | null;
+  appUpdateDismissed: string | null;
 }
 
 // ── Автопилот (autopilot.rs) ───────────────────────────────────
@@ -42,7 +45,7 @@ export interface Bootstrap {
   startHidden: boolean;
 }
 
-export type Screen = "main" | "check" | "lists" | "settings";
+export type Screen = "main" | "check" | "lists" | "telegram" | "settings";
 
 export interface StrategyInfo {
   name: string;
@@ -103,6 +106,42 @@ export interface Status {
   testsRunning: boolean;
   update: UpdateInfo;
   autopilot: AutopilotInfo;
+  telegram: TgStatus;
+  appUpdate: AppUpdateInfo;
+}
+
+// ── Обновление ZapretGUI (selfupdate.rs) ───────────────────────
+export interface AppUpdateInfo {
+  state: "idle" | "checking" | "current" | "available" | "downloading" | "installing" | "error";
+  current: string;
+  latest: string | null;
+  notes: string | null;
+  url: string | null;
+  progress: number | null;
+  error: string | null;
+  portable: boolean;
+}
+
+// ── Telegram-прокси (tgproxy.rs) ───────────────────────────────
+export interface TgStatus {
+  installed: boolean;
+  version: string | null;
+  latest: string | null;
+  running: boolean;
+  listening: boolean;
+  port: number;
+  startedAt: number | null;
+  external: string | null;
+  busy: string | null;
+  progress: number | null;
+}
+
+export interface TgConfig {
+  port: number;
+  secret: string;
+  dcIp: string[];
+  cfproxy: boolean;
+  link: string | null;
 }
 
 export type LogLevel = "ok" | "info" | "warn" | "err";

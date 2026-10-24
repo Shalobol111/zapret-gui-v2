@@ -364,6 +364,34 @@
 
   const fakeOptions = $derived((fakes?.files ?? []).map((f) => ({ value: f, label: f })));
 
+  // ── Обновление ZapretGUI ─────────────────────────────────────
+  const appUpd = $derived(app.status?.appUpdate);
+  let appUpdBusy = $state(false);
+  const appUpdText = $derived(
+    ({
+      idle: "",
+      checking: "· проверка…",
+      current: "· установлена последняя версия",
+      available: `· доступна ${appUpd?.latest ?? ""}`,
+      downloading: "· скачивание обновления…",
+      installing: "· установка…",
+      error: `· не удалось проверить: ${appUpd?.error ?? ""}`,
+    } as const)[appUpd?.state ?? "idle"],
+  );
+  async function checkAppUpdate() {
+    appUpdBusy = true;
+    try {
+      const r = await api.appUpdateCheck();
+      if (r.state === "available") app.updatePrompt = true;
+      else if (r.state === "current") toast("Установлена последняя версия ZapretGUI", "ok");
+      else if (r.state === "error") toast(r.error ?? "Не удалось проверить обновления", "err");
+    } catch (e) {
+      fail(e);
+    } finally {
+      appUpdBusy = false;
+    }
+  }
+
   // ── Настройки GUI ────────────────────────────────────────────
   async function exportSettings() {
     const p = await api.pickSettingsFile("save");
@@ -515,11 +543,11 @@
   </div>
   <div class="row">
     <div class="text">
-      <span class="label">Проверять обновления zapret</span>
-      <span class="hint">Тихо, при запуске; сообщит только о новой версии</span>
+      <span class="label">Проверять обновления</span>
+      <span class="hint">zapret, TgWsProxy и самой ZapretGUI — тихо, при запуске; сообщит только о новой версии</span>
     </div>
     <Switch
-      label="Проверять обновления zapret"
+      label="Проверять обновления"
       checked={!!app.settings?.checkUpdates}
       disabled={busySwitch !== null}
       onchange={(v) => toggle("checkUpdates", v)}
@@ -643,6 +671,20 @@
     <button type="button" class="link" onclick={() => api.openPath("logs").catch(fail)}>Журнал программы</button>
     <button type="button" class="link" onclick={() => api.openPath("releases").catch(fail)}>Релизы Flowseal</button>
   </div>
+</section>
+
+<section class="card gui" aria-label="Версия программы">
+  <span class="label grow"
+    >ZapretGUI {app.appVersion}
+    <span class="hint inline {appUpd?.state === 'available' ? 'warn' : appUpd?.state === 'error' ? 'err' : ''}">{appUpdText}</span></span
+  >
+  {#if appUpd?.state === "available"}
+    <Button variant="primary" height={34} onclick={() => (app.updatePrompt = true)}>Обновить до {appUpd.latest}</Button>
+  {:else}
+    <Button height={34} disabled={appUpd?.state === "checking" || appUpdBusy} onclick={checkAppUpdate}
+      >{appUpd?.state === "checking" || appUpdBusy ? "Проверка…" : "Проверить"}</Button
+    >
+  {/if}
 </section>
 
 <section class="card gui" aria-label="Резервная копия">
