@@ -1,0 +1,53 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "ZapretGUI",
+  "version": "2.1.0",
+  "identifier": "io.github.shalobol111.zapretgui",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ZapretGUI",
+        "width": 960,
+        "height": 640,
+        "minWidth": 780,
+        "minHeight": 600,
+        "center": true,
+        "visible": false,
+        "backgroundColor": "#0D0F12"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "ZapretGUI",
+    "shortDescription": "Управление zapret-discord-youtube",
+    "longDescription": "Графическая оболочка для сборки Flowseal/zapret-discord-youtube: запуск стратегий, служба Windows, проверка стратегий, диагностика, списки доменов и обновление zapret.",
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["Russian"],
+        "displayLanguageSelector": false,
+        "startMenuFolder": "ZapretGUI",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}
