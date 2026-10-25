@@ -1048,6 +1048,8 @@ Telegram Desktop → 127.0.0.1:1443 → WebSocket к серверам Telegram (
   программе с текстом релиза — «Позже» / «Установить». «Позже» запоминает версию: окно больше само не
   появляется, остаются «· обновить» у версии в меню и строка в Настройках («Проверить» / «Обновить до X»).
 - Файл: установленная копия (рядом uninstall.exe) — `*setup*.exe`, portable — `ZapretGUI*.exe` без «setup».
+  С 2.1.4 portable в релизе называется `ZapretGUI.exe` (без номера): обновление заменяет файл на месте, и имя
+  не устаревает; ярлыки и автозапуск продолжают работать.
   SHA-256 — из digest файла в релизе или SHA256SUMS.txt.
 - Установка: cmd-скрипт (наследует права администратора — без повторного UAC) ждёт выхода программы, затем
   `setup.exe /P /UPDATE` или замена exe, и запускает программу снова. Ручной обход восстанавливается после
@@ -1057,7 +1059,7 @@ Telegram Desktop → 127.0.0.1:1443 → WebSocket к серверам Telegram (
 
 Как выпускать обновление: поднять версию в tauri.conf.json, Cargo.toml и package.json, написать RELEASE_NOTES.md
 → `git push` и тег `vX.Y.Z` → GitHub Actions (release.yml) соберёт `ZapretGUI_X.Y.Z_x64-setup.exe`,
-`ZapretGUI_X.Y.Z_portable.exe`, SHA256SUMS.txt и создаст черновик релиза с текстом RELEASE_NOTES.md → «Publish». Pre-release программа
+`ZapretGUI.exe` (portable), SHA256SUMS.txt и создаст черновик релиза с текстом RELEASE_NOTES.md → «Publish». Pre-release программа
 не видит (GitHub не отдаёт его как latest).
 
 Проверено вживую: чтение настоящего репозитория (`live_app_release`), замена portable-exe скриптом в папке с

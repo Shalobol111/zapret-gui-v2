@@ -336,6 +336,10 @@ mod tests {
         let manual = [asset("ZapretGUI_2.0.1.exe")];
         assert_eq!(pick_asset(&manual, false).unwrap().name, "ZapretGUI_2.0.1.exe");
         assert!(pick_asset(&manual, true).is_none());
+        // С 2.1.4 portable в релизе называется просто ZapretGUI.exe — 2.1.2/2.1.3 его тоже находят.
+        let plain = [asset("ZapretGUI.exe"), asset("ZapretGUI_2.1.4_x64-setup.exe"), asset("SHA256SUMS.txt")];
+        assert_eq!(pick_asset(&plain, false).unwrap().name, "ZapretGUI.exe");
+        assert_eq!(pick_asset(&plain, true).unwrap().name, "ZapretGUI_2.1.4_x64-setup.exe");
     }
 
     #[test]

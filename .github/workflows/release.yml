@@ -40,7 +40,8 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}".TrimStart("v")
           New-Item -ItemType Directory out | Out-Null
-          Copy-Item src-tauri/target/release/zapret-gui.exe "out/ZapretGUI_${v}_portable.exe"
+          # Portable — всегда ZapretGUI.exe: обновление заменяет файл на месте, имя не устаревает.
+          Copy-Item src-tauri/target/release/zapret-gui.exe "out/ZapretGUI.exe"
           Copy-Item src-tauri/target/release/bundle/nsis/*.exe out/
           Get-ChildItem out | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } |
             Set-Content out/SHA256SUMS.txt -Encoding utf8
