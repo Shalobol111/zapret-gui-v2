@@ -1,6 +1,6 @@
 [package]
 name = "zapret-gui"
-version = "2.1.1"
+version = "2.1.2"
 description = "ZapretGUI — управление zapret-discord-youtube"
 edition = "2021"
 rust-version = "1.85"

@@ -268,17 +268,21 @@ fn remember_bypass(app: &AppHandle) {
 }
 
 /// cmd-скрипт: дождаться выхода ZapretGUI, поставить новую версию, запустить её, удалить себя.
-fn script_text(pid: u32, exe: &Path, new_file: &Path, installed: bool) -> String {
+///
+/// Выход ждём по тому, что exe освободился: запущенный exe нельзя открыть на запись. Без
+/// `tasklist | find` — в 2.1.0–2.1.1 этот конвейер зависал и оставлял пустое окно `find`.
+fn script_text(exe: &Path, new_file: &Path, installed: bool) -> String {
     let wait = format!(
-        ":wait\r\ntasklist /fi \"PID eq {pid}\" /nh | find \"{pid}\" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)\r\n"
+        "set n=0\r\n:wait\r\n2>nul (>>\"{exe}\" (call )) || (set /a n+=1 & ping -n 2 127.0.0.1 >nul & if %n% lss 60 goto wait)\r\n",
+        exe = exe.display()
     );
     let apply = if installed {
         // Установщик Tauri: /P — без вопросов, /UPDATE — не трогать ярлыки и данные.
         format!("\"{}\" /P /UPDATE\r\n", new_file.display())
     } else {
-        // Antivirus или проводник могут держать файл секунду-другую — несколько попыток.
+        // Антивирус или проводник могут держать файл секунду-другую — несколько попыток.
         format!(
-            "set n=0\r\n:move\r\nmove /y \"{new}\" \"{exe}\" >nul 2>&1 || (set /a n+=1 & ping -n 2 127.0.0.1 >nul & if %n% lss 10 goto move)\r\n",
+            "set n=0\r\n:move\r\nmove /y \"{new}\" \"{exe}\" >nul 2>&1 || (set /a n+=1 & ping -n 2 127.0.0.1 >nul & if %n% lss 30 goto move)\r\n",
             new = new_file.display(),
             exe = exe.display()
         )
@@ -290,19 +294,20 @@ fn write_script(dir: &Path, new_file: &Path, installed: bool) -> Result<PathBuf,
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let path = dir.join("update.cmd");
     // cmd читает скрипт в кодировке OEM — пути с кириллицей пишем через chcp 65001.
-    let text = format!("@chcp 65001 >nul\r\n{}", script_text(std::process::id(), &exe, new_file, installed));
+    let text = format!("@chcp 65001 >nul\r\n{}", script_text(&exe, new_file, installed));
     fs::write(&path, text).map_err(|e| format!("не удалось записать скрипт обновления: {e}"))?;
     Ok(path)
 }
 
+/// Скрипт — со скрытой консолью (CREATE_NO_WINDOW): команды внутри неё не открывают окон.
+/// DETACHED_PROCESS здесь нельзя: без консоли каждая команда скрипта открывала бы своё окно.
 fn run_script(script: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     std::process::Command::new("cmd.exe")
         .arg("/c")
         .arg(script)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("не удалось запустить обновление: {e}"))
@@ -354,16 +359,13 @@ mod tests {
 
     #[test]
     fn script_waits_then_applies_and_restarts() {
-        let s = script_text(
-            42,
-            Path::new(r"C:\Program Files\ZapretGUI\zapret-gui.exe"),
-            Path::new(r"C:\T\setup.exe"),
-            true,
-        );
-        assert!(s.contains("PID eq 42"));
+        let exe = Path::new(r"C:\Program Files\ZapretGUI\zapret-gui.exe");
+        let s = script_text(exe, Path::new(r"C:\T\setup.exe"), true);
+        assert!(s.contains(r#"(>>"C:\Program Files\ZapretGUI\zapret-gui.exe" (call ))"#), "ждём, пока exe освободится");
+        assert!(!s.contains("tasklist") && !s.contains("find "), "без конвейера tasklist | find");
         assert!(s.contains(r#""C:\T\setup.exe" /P /UPDATE"#));
         assert!(s.contains(r#"start "" "C:\Program Files\ZapretGUI\zapret-gui.exe""#));
-        let p = script_text(7, Path::new(r"D:\Apps\ZapretGUI.exe"), Path::new(r"C:\T\ZapretGUI_2.1.0.exe"), false);
+        let p = script_text(Path::new(r"D:\Apps\ZapretGUI.exe"), Path::new(r"C:\T\ZapretGUI_2.1.0.exe"), false);
         assert!(p.contains(r#"move /y "C:\T\ZapretGUI_2.1.0.exe" "D:\Apps\ZapretGUI.exe""#));
     }
 
@@ -386,7 +388,7 @@ mod tests {
     }
 
     /// Настоящая замена portable-exe скриптом (кириллица и пробелы в пути): вместо ZapretGUI —
-    /// копии rundll32.exe (без аргументов ничего не показывает).
+    /// копии ping.exe; скрипт ждёт, пока «старая» копия освободит файл.
     /// `ZAPRETGUI_TEST_DIR=<папка> cargo test -- --ignored live_portable_swap --nocapture`
     #[test]
     #[ignore]
@@ -396,40 +398,31 @@ mod tests {
         let dir = base.join("Тест обновления");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let src = PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32").join("rundll32.exe");
+        // «Старая программа» — копия ping.exe, запущенная на ~3 с: пока она работает, её exe занят.
+        let src = PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32").join("PING.EXE");
         let old = dir.join("ZapretGUI.exe");
         let new = dir.join("ZapretGUI_new.exe");
         fs::copy(&src, &old).unwrap();
         let mut bytes = fs::read(&src).unwrap();
         bytes.extend_from_slice(b"ZGUI-NEW");
         fs::write(&new, &bytes).unwrap();
-        // «Старая программа» — процесс, который живёт ~3 с.
-        let child = std::process::Command::new("ping")
+        let mut child = std::process::Command::new(&old)
             .args(["-n", "4", "127.0.0.1"])
             .stdout(std::process::Stdio::null())
             .creation_flags(0x0800_0000)
             .spawn()
             .unwrap();
         let script = dir.join("update.cmd");
-        fs::write(
-            &script,
-            format!(
-                "@chcp 65001 >nul
-{}",
-                script_text(child.id(), &old, &new, false)
-            ),
-        )
-        .unwrap();
+        fs::write(&script, ["@chcp 65001 >nul", &script_text(&old, &new, false)].join("\r\n")).unwrap();
         let t0 = std::time::Instant::now();
         run_script(&script).unwrap();
         while new.exists() || script.exists() {
-            assert!(t0.elapsed() < Duration::from_secs(25), "замена не прошла за 25 с");
+            assert!(t0.elapsed() < Duration::from_secs(30), "замена не прошла за 30 с");
             std::thread::sleep(Duration::from_millis(200));
         }
-        let mut child = child;
         let _ = child.wait();
         let got = fs::read(&old).unwrap();
         assert!(got.ends_with(b"ZGUI-NEW"), "exe не заменён");
-        println!("заменено за {:.1} с (ожидание выхода процесса ~3 с), скрипт удалил себя", t0.elapsed().as_secs_f32());
+        println!("заменено за {:.1} с (exe был занят ~3 с), скрипт удалил себя", t0.elapsed().as_secs_f32());
     }
 }
