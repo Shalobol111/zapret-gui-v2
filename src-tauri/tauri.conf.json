@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ZapretGUI",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "identifier": "io.github.shalobol111.zapretgui",
   "build": {
     "beforeDevCommand": "npm run dev",
