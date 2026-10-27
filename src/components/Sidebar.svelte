@@ -13,6 +13,7 @@
     { id: "check", label: "Проверка", icon: "activity" },
     { id: "lists", label: "Списки", icon: "list" },
     { id: "telegram", label: "Telegram", icon: "send" },
+    { id: "vpn", label: "VPN", icon: "globe" },
     { id: "settings", label: "Настройки", icon: "settings" },
   ];
 
@@ -52,6 +53,9 @@
       {#if it.id === "main" && bypassOn()}
         <span class="spacer"></span>
         <span class="run-dot" aria-label="обход включён"></span>
+      {:else if it.id === "vpn" && app.status?.vpn.running}
+        <span class="spacer"></span>
+        <span class="run-dot" aria-label="VPN включён"></span>
       {:else if it.id === "telegram" && app.status?.telegram.running}
         <span class="spacer"></span>
         <span class="run-dot" aria-label="прокси работает"></span>

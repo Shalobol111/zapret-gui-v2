@@ -56,6 +56,8 @@ pub struct Settings {
     pub resume_bypass: Option<String>,
     /// Версия ZapretGUI, для которой окно «Доступна новая версия» закрыли кнопкой «Позже».
     pub app_update_dismissed: Option<String>,
+    /// VPN работал до перезапуска при обновлении ZapretGUI — включить снова.
+    pub resume_vpn: bool,
 }
 
 impl Default for Settings {
@@ -80,6 +82,7 @@ impl Default for Settings {
             tg_autostart: false,
             resume_bypass: None,
             app_update_dismissed: None,
+            resume_vpn: false,
         }
     }
 }

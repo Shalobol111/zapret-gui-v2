@@ -28,7 +28,7 @@ async function start() {
   // Только в браузере (заглушка): ?screen=check — для скриншотов вёрстки.
   if (!api.inTauri) {
     const s = new URLSearchParams(location.search).get("screen");
-    if (s === "main" || s === "check" || s === "lists" || s === "telegram" || s === "settings") app.screen = s;
+    if (s === "main" || s === "check" || s === "lists" || s === "telegram" || s === "vpn" || s === "settings") app.screen = s;
   }
 
   const root = document.documentElement;
@@ -48,7 +48,7 @@ async function start() {
     return (await canQuit()) ? "close" : "cancel";
   });
   await api.onNavGoto((s) => {
-    if (s === "main" || s === "check" || s === "lists" || s === "telegram" || s === "settings") go(s);
+    if (s === "main" || s === "check" || s === "lists" || s === "telegram" || s === "vpn" || s === "settings") go(s);
   });
   await api.onAppUpdatePrompt(() => {
     app.updatePrompt = true;

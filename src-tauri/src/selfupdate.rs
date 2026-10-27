@@ -265,6 +265,9 @@ fn remember_bypass(app: &AppHandle) {
     if let Some(name) = name {
         let _ = st.settings.lock().unwrap().patch(&json!({ "resumeBypass": name }));
     }
+    if st.vpn.lock().unwrap().child.is_some() {
+        let _ = st.settings.lock().unwrap().patch(&json!({ "resumeVpn": true }));
+    }
 }
 
 /// cmd-скрипт: дождаться выхода ZapretGUI, поставить новую версию, запустить её, удалить себя.

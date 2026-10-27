@@ -40,6 +40,8 @@ pub struct AppState {
     pub tg: Mutex<crate::tgproxy::Shared>,
     /// Обновление самой ZapretGUI.
     pub self_update: Mutex<crate::selfupdate::Info>,
+    /// VPN (sing-box): процесс, текущее действие, задержки серверов.
+    pub vpn: Mutex<crate::vpn::Runtime>,
 }
 
 const ZAPRET_TTL: Duration = Duration::from_secs(5);
@@ -70,6 +72,7 @@ impl AppState {
             autopilot: Mutex::new(Default::default()),
             tg: Mutex::new(Default::default()),
             self_update: Mutex::new(Default::default()),
+            vpn: Mutex::new(Default::default()),
         }
     }
 

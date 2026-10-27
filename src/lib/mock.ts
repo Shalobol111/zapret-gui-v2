@@ -78,7 +78,57 @@ const status: Status = {
   autopilot: mockAutopilot(params.get("ap")),
   telegram: mockTelegram(params.get("tg")),
   appUpdate: mockAppUpdate(params.get("au")),
+  vpn: mockVpnStatus(params.get("vpn")),
 };
+
+/** ?vpn=none|empty|off|on|error — состояние VPN. */
+function mockVpnStatus(v: string | null): Status["vpn"] {
+  const base = {
+    installed: true, version: "1.14.4", latest: null as string | null, running: false, ready: false,
+    inbound: null as Status["vpn"]["inbound"], routeMode: null as Status["vpn"]["routeMode"], server: null as string | null,
+    port: 2080, startedAt: null as number | null, busy: null as string | null, progress: null as number | null,
+    error: null as string | null, servers: v === "empty" ? 0 : 4,
+  };
+  if (v === "none") return { ...base, installed: false, version: null, servers: 0 };
+  if (v === "on") return { ...base, running: true, ready: true, inbound: "proxy", routeMode: "lists", server: "Нидерланды · Амстердам", startedAt: Date.now() - 1_234_000 };
+  if (v === "error") return { ...base, error: "sing-box не принял настройки: outbound[0]: missing uuid" };
+  return base;
+}
+
+const VPN_SERVERS = [
+  { id: "a1", name: "Нидерланды · Амстердам", protocol: "VLESS", host: "nl.example.net", port: 443, outbound: {}, unsupported: null },
+  { id: "a2", name: "Германия · Франкфурт", protocol: "VLESS", host: "de.example.net", port: 443, outbound: {}, unsupported: null },
+  { id: "a3", name: "Финляндия · Хельсинки", protocol: "Hysteria2", host: "fi.example.net", port: 8443, outbound: {}, unsupported: null },
+  { id: "a4", name: "США · xhttp", protocol: "VLESS", host: "us.example.net", port: 443, outbound: null, unsupported: "транспорт xhttp не поддерживается sing-box (он есть только в Xray)" },
+];
+let vpnStore = {
+  subscriptions: params.get("vpn") === "empty" || params.get("vpn") === "none" ? [] : [{
+    id: "s1", url: "https://sub.example.net/abc", name: "Мой VPN", updatedAt: Date.now() - 3_600_000, error: null,
+    info: { upload: 1.2 * 1024 ** 3, download: 23.4 * 1024 ** 3, total: 100 * 1024 ** 3, expire: Math.floor(Date.now() / 1000) + 20 * 86400 },
+    servers: VPN_SERVERS,
+  }],
+  manual: [] as typeof VPN_SERVERS,
+  selected: null as string | null,
+  routeMode: (params.get("vpnmode") as "lists" | "all_except_ru") ?? "lists",
+  inbound: "proxy" as "proxy" | "tun",
+  presets: ["blocked", "ai"],
+  zapretDirect: true,
+  port: 2080,
+  autostart: false,
+};
+const VPN_PRESETS = [
+  { id: "blocked", title: "Заблокировано в России", hint: "Около 1200 сайтов, недоступных из России, — список сообщества itdoginfo", count: 1183 },
+  { id: "ai", title: "ИИ-сервисы", hint: "ChatGPT, Claude, Gemini, Perplexity, Grok и другие", count: 45 },
+  { id: "meta", title: "Instagram, Facebook, WhatsApp", hint: "Сервисы Meta", count: 17 },
+  { id: "twitter", title: "X (Twitter)", hint: "", count: 12 },
+  { id: "tiktok", title: "TikTok", hint: "", count: 9 },
+];
+let vpnPings: Record<string, number | null> = {};
+function mockVpnStatusSub() {
+  return { id: "s1", url: "https://sub.example.net/abc", name: "Мой VPN", updatedAt: Date.now(), error: null,
+    info: { upload: 0, download: 0, total: 100 * 1024 ** 3, expire: Math.floor(Date.now() / 1000) + 30 * 86400 }, servers: VPN_SERVERS };
+}
+const vpnView = () => ({ store: vpnStore, presets: VPN_PRESETS, pings: vpnPings });
 
 function releaseNotes() {
   return `## ZapretGUI 2.1.0
@@ -633,6 +683,55 @@ export async function call<T>(cmd: string, args: Record<string, unknown> = {}): 
         status.appUpdate = { ...status.appUpdate, state: "installing", progress: null };
         changed();
         return;
+      case "vpn_view":
+        return vpnView();
+      case "vpn_install":
+        for (let p = 0; p <= 100; p += 25) {
+          status.vpn = { ...status.vpn, busy: "Скачивание sing-box", progress: p };
+          changed();
+          await wait(300);
+        }
+        status.vpn = { ...status.vpn, installed: true, version: "1.14.4", busy: null, progress: null };
+        changed();
+        return "sing-box 1.14.4 установлен";
+      case "vpn_add":
+        await wait(700);
+        if (!vpnStore.subscriptions.length) vpnStore.subscriptions = [{ ...mockVpnStatusSub() }];
+        status.vpn = { ...status.vpn, servers: 4 };
+        changed();
+        return vpnView();
+      case "vpn_update":
+        await wait(600);
+        return vpnView();
+      case "vpn_remove":
+        vpnStore.subscriptions = vpnStore.subscriptions.filter((s) => s.id !== args.id);
+        vpnStore.manual = vpnStore.manual.filter((s) => s.id !== args.id);
+        return vpnView();
+      case "vpn_select":
+        vpnStore.selected = (args.id as string | null) ?? null;
+        return vpnView();
+      case "vpn_set":
+        vpnStore = { ...vpnStore, ...(args.patch as object) };
+        return vpnView();
+      case "vpn_start":
+        requireAdmin();
+        status.vpn = { ...status.vpn, running: true, ready: false, error: null, startedAt: Date.now(), inbound: vpnStore.inbound, routeMode: vpnStore.routeMode,
+          server: VPN_SERVERS.find((s) => s.id === vpnStore.selected)?.name ?? "Автоматически (быстрейший)" };
+        changed();
+        await wait(900);
+        status.vpn = { ...status.vpn, ready: true };
+        changed();
+        log("ok", "VPN включён");
+        return;
+      case "vpn_stop":
+        status.vpn = { ...status.vpn, running: false, ready: false, startedAt: null };
+        changed();
+        log("info", "VPN выключен");
+        return;
+      case "vpn_ping":
+        await wait(800);
+        vpnPings = { a1: 48, a2: 63, a3: null, a4: 120 };
+        return vpnPings;
       case "autopilot_check":
         status.autopilot = { ...status.autopilot, phase: "checking" };
         changed();

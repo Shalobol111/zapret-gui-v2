@@ -45,7 +45,7 @@ export interface Bootstrap {
   startHidden: boolean;
 }
 
-export type Screen = "main" | "check" | "lists" | "telegram" | "settings";
+export type Screen = "main" | "check" | "lists" | "telegram" | "vpn" | "settings";
 
 export interface StrategyInfo {
   name: string;
@@ -108,6 +108,66 @@ export interface Status {
   autopilot: AutopilotInfo;
   telegram: TgStatus;
   appUpdate: AppUpdateInfo;
+  vpn: VpnStatus;
+}
+
+// ── VPN (vpn/*.rs) ─────────────────────────────────────────────
+export type VpnInbound = "proxy" | "tun";
+export type VpnRouteMode = "lists" | "all_except_ru";
+
+export interface VpnStatus {
+  installed: boolean;
+  version: string | null;
+  latest: string | null;
+  running: boolean;
+  ready: boolean;
+  inbound: VpnInbound | null;
+  routeMode: VpnRouteMode | null;
+  server: string | null;
+  port: number;
+  startedAt: number | null;
+  busy: string | null;
+  progress: number | null;
+  error: string | null;
+  servers: number;
+}
+
+export interface VpnServer {
+  id: string;
+  name: string;
+  protocol: string;
+  host: string;
+  port: number;
+  outbound: unknown | null;
+  unsupported: string | null;
+}
+
+export interface VpnSubscription {
+  id: string;
+  url: string;
+  name: string;
+  updatedAt: number | null;
+  error: string | null;
+  info: { upload: number; download: number; total: number; expire: number } | null;
+  servers: VpnServer[];
+}
+
+export interface VpnStore {
+  subscriptions: VpnSubscription[];
+  manual: VpnServer[];
+  selected: string | null;
+  routeMode: VpnRouteMode;
+  inbound: VpnInbound;
+  presets: string[];
+  zapretDirect: boolean;
+  port: number;
+  autostart: boolean;
+}
+
+export interface VpnView {
+  store: VpnStore;
+  presets: { id: string; title: string; hint: string; count: number }[];
+  pings: Record<string, number | null>;
 }
 
 // ── Обновление ZapretGUI (selfupdate.rs) ───────────────────────

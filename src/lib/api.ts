@@ -20,6 +20,8 @@ import type {
   TestKind,
   TestRun,
   TgConfig,
+  VpnStore,
+  VpnView,
   GameMode,
   HostsPlan,
   IpsetMode,
@@ -148,6 +150,19 @@ export const appUpdateInstall = () => call<void>("app_update_install");
 /** Уведомление Windows «Доступна ZapretGUI …» → кнопка «Установить». */
 export const onAppUpdatePrompt = (cb: () => void) => on<null>("app-update://prompt", () => cb());
 
+// ── VPN ────────────────────────────────────────────────────────
+export const vpnView = () => call<VpnView>("vpn_view");
+export const vpnInstall = () => call<string>("vpn_install");
+/** Подписка (https://…) или ключи (vless://, ss://…). */
+export const vpnAdd = (input: string) => call<VpnView>("vpn_add", { input });
+export const vpnUpdate = (id: string | null = null) => call<VpnView>("vpn_update", { id });
+export const vpnRemove = (id: string) => call<VpnView>("vpn_remove", { id });
+export const vpnSelect = (id: string | null) => call<VpnView>("vpn_select", { id });
+export const vpnSet = (patch: Partial<VpnStore>) => call<VpnView>("vpn_set", { patch });
+export const vpnStart = () => call<void>("vpn_start");
+export const vpnStop = () => call<void>("vpn_stop");
+export const vpnPing = () => call<Record<string, number | null>>("vpn_ping");
+
 // ── Списки ─────────────────────────────────────────────────────
 export const listsIndex = () => call<ListInfo[]>("lists_index");
 export const listRead = (id: string) => call<ListData>("list_read", { id });
@@ -208,7 +223,7 @@ export const fakesSet = (kind: FakeKind, name: string) => call<void>("fakes_set"
 export const ipsetCount = () => call<number>("ipset_count");
 export const ipsetUpdate = () => call<number>("ipset_update");
 export const gamePortsSet = (tcp: string, udp: string) => call<void>("game_ports_set", { tcp, udp });
-export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns" | "tglog" | "tgreleases" | "appreleases") => call<void>("open_path", { target });
+export const openPath = (target: "zapret" | "logs" | "results" | "releases" | "dns" | "tglog" | "tgreleases" | "appreleases" | "vpnlog" | "vpnlist-vpn" | "vpnlist-direct") => call<void>("open_path", { target });
 
 // ── Настройки GUI ──────────────────────────────────────────────
 export const settingsExport = (path: string) => call<void>("settings_export", { path });

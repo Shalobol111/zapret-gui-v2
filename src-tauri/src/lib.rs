@@ -12,6 +12,7 @@ mod sys;
 mod tgproxy;
 mod tray;
 mod update;
+mod vpn;
 mod zapret;
 
 use std::time::Duration;
@@ -120,6 +121,28 @@ fn startup(app: &AppHandle) {
         }
     }
     selfupdate::cleanup();
+    if vpn::singbox::installed() && settings.check_updates {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Ok(r) = vpn::singbox::latest().await {
+                if vpn::singbox::newer(&r.version) {
+                    journal::info(format!("Доступна новая версия sing-box: {}", r.version));
+                    app.state::<AppState>().vpn.lock().unwrap().latest = Some(r.version);
+                }
+            }
+        });
+    }
+    // VPN: убрать остатки прошлого сеанса (системный прокси на неработающий sing-box), затем автозапуск.
+    vpn::recover();
+    let vpn_store = vpn::load();
+    if (vpn_store.autostart || settings.resume_vpn) && vpn::singbox::installed() && st.is_admin {
+        if settings.resume_vpn {
+            let _ = st.settings.lock().unwrap().patch(&json!({ "resumeVpn": false }));
+        }
+        if let Err(e) = vpn::start(&st) {
+            journal::warn(format!("VPN не включён при запуске: {e}"));
+        }
+    }
     // После обновления ZapretGUI — включить ручной обход, который работал до перезапуска.
     if let Some(name) = settings.resume_bypass.clone() {
         let _ = st.settings.lock().unwrap().patch(&json!({ "resumeBypass": null }));
@@ -259,6 +282,16 @@ pub fn run() {
             commands::tg_connect,
             commands::app_update_check,
             commands::app_update_install,
+            commands::vpn_view,
+            commands::vpn_install,
+            commands::vpn_add,
+            commands::vpn_update,
+            commands::vpn_remove,
+            commands::vpn_select,
+            commands::vpn_set,
+            commands::vpn_start,
+            commands::vpn_stop,
+            commands::vpn_ping,
             commands::tests_cancel,
             commands::tests_last,
             commands::diag_run,
@@ -287,6 +320,8 @@ pub fn run() {
     app.run(|app, event| {
         if let RunEvent::Exit = event {
             let st = app.state::<AppState>();
+            // VPN не переживает выход: иначе системный прокси указывал бы на остановленный sing-box.
+            let _ = vpn::stop(&st);
             let stop = st.settings.lock().unwrap().get().stop_bypass_on_exit;
             if stop && st.runner.lock().unwrap().is_active() {
                 let _ = zapret::runner::stop(&st.runner);

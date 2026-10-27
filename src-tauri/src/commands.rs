@@ -563,6 +563,17 @@ pub fn open_path(target: String, state: State<AppState>) -> Res<()> {
         "logs" => crate::settings::data_dir().join("logs"),
         "results" => state.require_root()?.join("utils").join("test results"),
         // Фиксированные адреса: страница релизов (браузер) и сетевые параметры Windows (Secure DNS).
+        // VPN: лог sing-box и свои списки — файлами (откроются в Блокноте).
+        "vpnlog" | "vpnlist-vpn" | "vpnlist-direct" => {
+            crate::vpn::lists::ensure_custom();
+            let target = match target.as_str() {
+                "vpnlog" => crate::vpn::log_file(),
+                "vpnlist-vpn" => crate::vpn::lists::custom_path(crate::vpn::lists::VPN_FILE),
+                _ => crate::vpn::lists::custom_path(crate::vpn::lists::DIRECT_FILE),
+            };
+            let target = if target.is_file() { target } else { crate::vpn::dir() };
+            return crate::sys::cmd::hidden("explorer.exe").arg(target).spawn().map(|_| ()).map_err(|e| e.to_string());
+        }
         // Лог TgWsProxy — файлом (откроется в Блокноте), папку — если лога ещё нет.
         "tglog" => {
             let log = crate::tgproxy::log_file();
@@ -1001,4 +1012,192 @@ pub async fn app_update_install(app: AppHandle) -> Res<()> {
     app.state::<AppState>().require_admin()?;
     app.state::<AppState>().require_idle()?;
     crate::selfupdate::install(app).await
+}
+
+// ── VPN (sing-box) ─────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VpnView {
+    store: crate::vpn::Store,
+    presets: Vec<crate::vpn::lists::PresetInfo>,
+    pings: std::collections::HashMap<String, Option<u32>>,
+}
+
+fn vpn_view_now(st: &AppState) -> VpnView {
+    let mut store = crate::vpn::load();
+    store.saved_proxy = None;
+    VpnView { store, presets: crate::vpn::lists::infos(), pings: st.vpn.lock().unwrap().pings.clone() }
+}
+
+#[tauri::command]
+pub async fn vpn_view(app: AppHandle) -> Res<VpnView> {
+    blocking(&app, |st| Ok(vpn_view_now(st))).await
+}
+
+fn vpn_busy(app: &AppHandle, busy: Option<&str>, progress: Option<u8>) {
+    let st = app.state::<AppState>();
+    {
+        let mut rt = st.vpn.lock().unwrap();
+        rt.busy = busy.map(str::to_string);
+        rt.progress = progress;
+    }
+    st.poke();
+}
+
+/// Скачать (или обновить) sing-box; работающий VPN перезапускается.
+#[tauri::command]
+pub async fn vpn_install(app: AppHandle) -> Res<String> {
+    vpn_busy(&app, Some("Получение ссылки на релиз"), None);
+    let r = async {
+        let rel = crate::vpn::singbox::latest().await?;
+        let running = app.state::<AppState>().vpn.lock().unwrap().child.is_some();
+        if running {
+            crate::vpn::stop(&app.state::<AppState>())?;
+        }
+        let a = app.clone();
+        crate::vpn::singbox::install(&rel, move |p| vpn_busy(&a, Some("Скачивание sing-box"), Some(p))).await?;
+        app.state::<AppState>().vpn.lock().unwrap().latest = None;
+        journal::ok(format!("sing-box {} установлен", rel.version));
+        if running {
+            vpn_busy(&app, Some("Запуск"), None);
+            let a = app.clone();
+            tauri::async_runtime::spawn_blocking(move || crate::vpn::start(&a.state::<AppState>()))
+                .await
+                .map_err(|e| e.to_string())??;
+        }
+        Ok::<String, String>(format!("sing-box {} установлен", rel.version))
+    }
+    .await;
+    vpn_busy(&app, None, None);
+    r.inspect_err(|e| journal::err(format!("sing-box: {e}")))
+}
+
+/// Подписка (https://…) или ключи (vless://, ss://…).
+#[tauri::command]
+pub async fn vpn_add(app: AppHandle, input: String) -> Res<VpnView> {
+    vpn_busy(&app, Some("Загрузка подписки"), None);
+    let r = crate::vpn::add(&input).await;
+    vpn_busy(&app, None, None);
+    let msg = r.inspect_err(|e| journal::err(format!("VPN: {e}")))?;
+    journal::info(format!("VPN: {msg}"));
+    Ok(vpn_view_now(&app.state::<AppState>()))
+}
+
+#[tauri::command]
+pub async fn vpn_update(app: AppHandle, id: Option<String>) -> Res<VpnView> {
+    vpn_busy(&app, Some("Обновление подписки"), None);
+    let r = crate::vpn::update(id.as_deref()).await;
+    vpn_busy(&app, None, None);
+    let n = r.inspect_err(|e| journal::err(format!("VPN: подписка не обновилась: {e}")))?;
+    journal::ok(format!("VPN: подписки обновлены · серверов: {n}"));
+    Ok(vpn_view_now(&app.state::<AppState>()))
+}
+
+/// Удалить подписку или сервер из одиночных ссылок.
+#[tauri::command]
+pub async fn vpn_remove(app: AppHandle, id: String) -> Res<VpnView> {
+    blocking(&app, move |st| {
+        let mut s = crate::vpn::load();
+        s.subscriptions.retain(|x| x.id != id);
+        s.manual.retain(|x| x.id != id);
+        if s.selected.as_deref() == Some(id.as_str()) {
+            s.selected = None;
+        }
+        crate::vpn::save(&s)?;
+        Ok(vpn_view_now(st))
+    })
+    .await
+}
+
+/// Выбрать сервер (`None` — автоматически быстрейший); работающий VPN перезапускается.
+#[tauri::command]
+pub async fn vpn_select(app: AppHandle, id: Option<String>) -> Res<VpnView> {
+    blocking(&app, move |st| {
+        let mut s = crate::vpn::load();
+        s.selected = id;
+        crate::vpn::save(&s)?;
+        if st.vpn.lock().unwrap().child.is_some() {
+            crate::vpn::start(st)?;
+        }
+        Ok(vpn_view_now(st))
+    })
+    .await
+}
+
+/// Настройки VPN (routeMode, inbound, presets, zapretDirect, port, autostart).
+#[tauri::command]
+pub async fn vpn_set(app: AppHandle, patch: Value) -> Res<VpnView> {
+    blocking(&app, move |st| {
+        let current = crate::vpn::load();
+        let mut v = serde_json::to_value(&current).map_err(|e| e.to_string())?;
+        if let (Some(obj), Value::Object(p)) = (v.as_object_mut(), patch) {
+            for (k, val) in p {
+                if matches!(k.as_str(), "routeMode" | "inbound" | "presets" | "zapretDirect" | "port" | "autostart") {
+                    obj.insert(k, val);
+                }
+            }
+        }
+        let next: crate::vpn::Store = serde_json::from_value(v).map_err(|e| format!("неверные настройки VPN: {e}"))?;
+        if next.port < 1024 {
+            return Err("порт должен быть от 1024 до 65535".into());
+        }
+        crate::vpn::save(&next)?;
+        let restart = st.vpn.lock().unwrap().child.is_some()
+            && (next.route_mode != current.route_mode
+                || next.inbound != current.inbound
+                || next.presets != current.presets
+                || next.zapret_direct != current.zapret_direct
+                || next.port != current.port);
+        if restart {
+            crate::vpn::start(st)?;
+        }
+        Ok(vpn_view_now(st))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn vpn_start(app: AppHandle) -> Res<()> {
+    vpn_busy(&app, Some("Подготовка списков"), None);
+    let store = crate::vpn::load();
+    let mut need: Vec<&crate::vpn::lists::Preset> =
+        store.presets.iter().filter_map(|id| crate::vpn::lists::preset(id)).collect();
+    need.push(&crate::vpn::lists::RU_DIRECT);
+    let errors = crate::vpn::lists::refresh(&need, false).await;
+    for e in errors {
+        journal::warn(format!("VPN: список не обновился ({e}) — используется сохранённый"));
+    }
+    vpn_busy(&app, Some("Запуск"), None);
+    let r = blocking(&app, |st| {
+        st.require_admin()?;
+        crate::vpn::start(st)
+    })
+    .await;
+    vpn_busy(&app, None, None);
+    if let Err(e) = &r {
+        app.state::<AppState>().vpn.lock().unwrap().error = Some(e.clone());
+        journal::err(format!("VPN не включился: {e}"));
+    }
+    r
+}
+
+#[tauri::command]
+pub async fn vpn_stop(app: AppHandle) -> Res<()> {
+    blocking(&app, |st| {
+        st.vpn.lock().unwrap().error = None;
+        crate::vpn::stop(st)
+    })
+    .await
+}
+
+/// Задержка до серверов (TCP); результат сохраняется для списка серверов.
+#[tauri::command]
+pub async fn vpn_ping(app: AppHandle) -> Res<std::collections::HashMap<String, Option<u32>>> {
+    blocking(&app, |st| {
+        let pings = crate::vpn::ping(&crate::vpn::load());
+        st.vpn.lock().unwrap().pings = pings.clone();
+        Ok(pings)
+    })
+    .await
 }

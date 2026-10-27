@@ -13,7 +13,8 @@ export type IconName =
   | "moon"
   | "chevronDown"
   | "play"
-  | "send";
+  | "send"
+  | "globe";
 
 export interface IconDef {
   /** Элементы внутри <svg viewBox="0 0 24 24">. */
@@ -23,6 +24,10 @@ export interface IconDef {
 }
 
 export const ICONS: Record<IconName, IconDef> = {
+  // Lucide «globe» — VPN.
+  globe: {
+    body: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  },
   // Lucide «send» — бумажный самолётик (Telegram).
   send: {
     body:
