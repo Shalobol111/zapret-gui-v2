@@ -7,6 +7,7 @@ pub mod lists;
 pub mod singbox;
 pub mod subscription;
 pub mod sysproxy;
+pub mod xray;
 
 use std::collections::HashMap;
 use std::fs;
@@ -128,6 +129,8 @@ pub fn servers(s: &Store) -> Vec<&Server> {
 #[derive(Default)]
 pub struct Runtime {
     pub child: Option<Child>,
+    /// Xray — если выбранные серверы работают через него.
+    pub xray: Option<Child>,
     pub started_at: Option<u64>,
     pub busy: Option<String>,
     pub progress: Option<u8>,
@@ -157,6 +160,10 @@ pub struct Status {
     pub progress: Option<u8>,
     pub error: Option<String>,
     pub servers: usize,
+    pub xray_installed: bool,
+    pub xray_version: Option<String>,
+    /// Работает ли VPN через Xray (выбранные серверы — VLESS/VMess/Trojan/Shadowsocks).
+    pub via_xray: bool,
 }
 
 fn listening(port: u16) -> bool {
@@ -164,10 +171,26 @@ fn listening(port: u16) -> bool {
 }
 
 pub fn status(rt: &mut Runtime, store: &Store) -> Status {
+    // Xray упал — без него трафик «через VPN» не идёт: останавливаем и sing-box, возвращаем прокси.
+    let xray_dead = rt.xray.as_mut().is_some_and(|c| !matches!(c.try_wait(), Ok(None)));
+    if xray_dead {
+        rt.xray = None;
+        if let Some(mut c) = rt.child.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        rt.started_at = None;
+        rt.error = Some(xray_error().unwrap_or_else(|| "Xray неожиданно завершился".into()));
+        restore_proxy();
+    }
     let alive = rt.child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
     if !alive && rt.child.is_some() {
         rt.child = None;
         rt.started_at = None;
+        if let Some(mut x) = rt.xray.take() {
+            let _ = x.kill();
+        }
+        restore_proxy();
         if rt.error.is_none() {
             rt.error = Some(last_error().unwrap_or_else(|| "sing-box неожиданно завершился".into()));
         }
@@ -187,7 +210,16 @@ pub fn status(rt: &mut Runtime, store: &Store) -> Status {
         progress: rt.progress,
         error: rt.error.clone(),
         servers: servers(store).len(),
+        xray_installed: xray::installed(),
+        xray_version: xray::version(),
+        via_xray: alive && rt.xray.is_some(),
     }
+}
+
+/// Последняя ошибка из лога Xray.
+fn xray_error() -> Option<String> {
+    let text = fs::read_to_string(xray_log_file()).ok()?;
+    text.lines().rev().find(|l| l.contains("[Error]") || l.contains("Failed")).map(|l| l.chars().take(300).collect())
 }
 
 /// Последняя ошибка из лога sing-box (для понятного сообщения о сбое).
@@ -201,30 +233,78 @@ fn last_error() -> Option<String> {
 
 // ── Запуск и остановка ─────────────────────────────────────────
 
-/// Выход «proxy»: выбранный сервер или все поддерживаемые для автовыбора быстрейшего.
-fn chosen(store: &Store) -> Result<(Vec<Value>, String), String> {
+/// Кто соединяется с VPN-сервером.
+#[derive(Debug)]
+pub enum Engine {
+    /// Xray (VLESS/VMess/Trojan/Shadowsocks): один сервер или автовыбор быстрейшего (leastPing).
+    Xray(Vec<Server>),
+    /// sing-box напрямую (Hysteria2, TUIC, серверы из JSON-подписки): один или urltest.
+    SingBox(Vec<Value>),
+}
+
+/// Порт SOCKS, на котором Xray ждёт трафик от sing-box.
+pub fn xray_port(store: &Store) -> u16 {
+    store.port.wrapping_add(1).max(1025)
+}
+
+/// Выход «proxy»: выбранный сервер или автовыбор быстрейшего.
+pub fn chosen(store: &Store) -> Result<(Engine, String), String> {
     let all = servers(store);
-    let usable: Vec<&&Server> = all.iter().filter(|s| s.outbound.is_some()).collect();
+    let usable: Vec<&Server> = all.iter().copied().filter(|s| s.usable()).collect();
     if usable.is_empty() {
         return Err(if all.is_empty() {
             "добавьте подписку или ключ VPN".into()
         } else {
-            "ни один сервер не поддерживается sing-box".into()
+            "ни один сервер не поддерживается".into()
         });
     }
     if let Some(id) = &store.selected {
         if let Some(s) = usable.iter().find(|s| &s.id == id) {
-            return Ok((vec![s.outbound.clone().unwrap()], s.name.clone()));
+            let engine = if s.via_xray() {
+                Engine::Xray(vec![(*s).clone()])
+            } else {
+                Engine::SingBox(vec![s.outbound.clone().unwrap()])
+            };
+            return Ok((engine, s.name.clone()));
         }
     }
-    // Автовыбор: не больше 30 серверов — urltest проверяет все по очереди.
-    Ok((usable.iter().take(30).map(|s| s.outbound.clone().unwrap()).collect(), "Автоматически (быстрейший)".into()))
+    // Автовыбор: не больше 30 серверов — их проверяют по очереди. Предпочтение — серверам Xray.
+    let auto = "Автоматически (быстрейший)".to_string();
+    let xr: Vec<Server> = usable.iter().filter(|s| s.via_xray()).take(30).map(|s| (*s).clone()).collect();
+    if !xr.is_empty() {
+        return Ok((Engine::Xray(xr), auto));
+    }
+    Ok((Engine::SingBox(usable.iter().filter_map(|s| s.outbound.clone()).take(30).collect()), auto))
 }
 
-/// Собрать config.json и проверить его sing-box-ом.
-pub fn write_config(store: &Store, zapret_root: Option<&Path>) -> Result<String, String> {
+fn xray_config_file() -> PathBuf {
+    dir().join("xray-config.json")
+}
+pub fn xray_log_file() -> PathBuf {
+    dir().join("xray.log")
+}
+
+/// Собрать конфиги (sing-box и, если нужен, Xray) и проверить их ядрами. Возвращает имя сервера
+/// и признак «нужен Xray».
+pub fn write_config(store: &Store, zapret_root: Option<&Path>) -> Result<(String, bool), String> {
     lists::ensure_custom();
-    let (servers, name) = chosen(store)?;
+    fs::create_dir_all(dir()).map_err(|e| e.to_string())?;
+    let (engine, name) = chosen(store)?;
+    let (servers, use_xray) = match engine {
+        Engine::SingBox(v) => (v, false),
+        Engine::Xray(list) => {
+            if !xray::installed() {
+                return Err("для этих серверов нужен Xray — нажмите «Скачать ядра»".into());
+            }
+            let refs: Vec<&Server> = list.iter().collect();
+            let xcfg = xray::config(&refs, xray_port(store), &xray_log_file().display().to_string())?;
+            fs::write(xray_config_file(), serde_json::to_string_pretty(&xcfg).map_err(|e| e.to_string())?)
+                .map_err(|e| format!("не удалось записать конфиг Xray: {e}"))?;
+            xray::check(&xray_config_file()).map_err(|e| format!("Xray не принял настройки: {e}"))?;
+            let socks = serde_json::json!({ "type": "socks", "server": "127.0.0.1", "server_port": xray_port(store), "version": "5" });
+            (vec![socks], true)
+        }
+    };
     let input = config::Input {
         inbound: store.inbound,
         route_mode: store.route_mode,
@@ -238,11 +318,10 @@ pub fn write_config(store: &Store, zapret_root: Option<&Path>) -> Result<String,
         log_file: log_file().display().to_string(),
     };
     let cfg = config::build(&input);
-    fs::create_dir_all(dir()).map_err(|e| e.to_string())?;
     fs::write(config_file(), serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?)
         .map_err(|e| format!("не удалось записать конфиг: {e}"))?;
     singbox::check(&config_file()).map_err(|e| format!("sing-box не принял настройки: {e}"))?;
-    Ok(name)
+    Ok((name, use_xray))
 }
 
 /// IP-адреса VPN-серверов → исключения zapret (`ipset-exclude-user.txt`, блок между маркерами),
@@ -304,11 +383,13 @@ pub fn exclude_from_zapret(root: &Path, store: &Store) -> Result<usize, String> 
 
 /// Убить sing-box из нашей папки, оставшийся от прошлого запуска (сбой, обновление).
 fn kill_orphans() {
-    let mine = singbox::exe();
     let norm = |p: &Path| p.to_string_lossy().to_lowercase();
-    for p in crate::sys::process::find("sing-box.exe") {
-        if p.exe.as_deref().is_some_and(|e| norm(e) == norm(&mine)) {
-            crate::sys::process::kill_pid(p.pid);
+    // Только наши копии (по пути exe) — Xray из Happ/v2rayN не трогаем.
+    for (name, mine) in [("sing-box.exe", singbox::exe()), ("xray.exe", xray::exe())] {
+        for p in crate::sys::process::find(name) {
+            if p.exe.as_deref().is_some_and(|e| norm(e) == norm(&mine)) {
+                crate::sys::process::kill_pid(p.pid);
+            }
         }
     }
 }
@@ -320,7 +401,7 @@ pub fn start(st: &AppState) -> Result<(), String> {
     stop(st)?;
     let mut store = load();
     let root = st.root();
-    let name = write_config(&store, root.as_deref())?;
+    let (name, use_xray) = write_config(&store, root.as_deref())?;
     if let Some(r) = root.as_deref() {
         match exclude_from_zapret(r, &store) {
             Ok(n) if n > 0 => journal::info(format!("VPN: адреса серверов ({n}) добавлены в исключения zapret")),
@@ -332,11 +413,45 @@ pub fn start(st: &AppState) -> Result<(), String> {
         return Err(format!("порт {} уже занят другой программой — смените порт в настройках VPN", store.port));
     }
     let _ = fs::remove_file(log_file());
-    let mut child = singbox::spawn(&config_file())?;
+    // Сначала Xray (если нужен): sing-box отдаёт ему трафик «через VPN» по SOCKS.
+    let mut xray_child = None;
+    if use_xray {
+        let port = xray_port(&store);
+        if listening(port) {
+            return Err(format!("порт {port} (для Xray) уже занят — смените порт VPN в настройках"));
+        }
+        let _ = fs::remove_file(xray_log_file());
+        let mut x = xray::spawn(&xray_config_file())?;
+        let t0 = Instant::now();
+        while !listening(port) {
+            if let Ok(Some(_)) = x.try_wait() {
+                return Err(xray_error().unwrap_or_else(|| "Xray завершился сразу после запуска".into()));
+            }
+            if t0.elapsed() > Duration::from_secs(10) {
+                let _ = x.kill();
+                return Err("Xray не начал работу за 10 с".into());
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        xray_child = Some(x);
+    }
+    let kill_xray = |x: &mut Option<Child>| {
+        if let Some(c) = x.as_mut() {
+            let _ = c.kill();
+        }
+    };
+    let mut child = match singbox::spawn(&config_file()) {
+        Ok(c) => c,
+        Err(e) => {
+            kill_xray(&mut xray_child);
+            return Err(e);
+        }
+    };
     // Ждём порт (прокси) или просто убеждаемся, что процесс не упал сразу (TUN).
     let t0 = Instant::now();
     loop {
         if let Ok(Some(_)) = child.try_wait() {
+            kill_xray(&mut xray_child);
             return Err(last_error().unwrap_or_else(|| "sing-box завершился сразу после запуска".into()));
         }
         let ok = match store.inbound {
@@ -348,6 +463,7 @@ pub fn start(st: &AppState) -> Result<(), String> {
         }
         if t0.elapsed() > Duration::from_secs(10) {
             let _ = child.kill();
+            kill_xray(&mut xray_child);
             return Err("sing-box не начал работу за 10 с".into());
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -362,12 +478,14 @@ pub fn start(st: &AppState) -> Result<(), String> {
             }
             Err(e) => {
                 let _ = child.kill();
+                kill_xray(&mut xray_child);
                 return Err(e);
             }
         }
     }
     let mut rt = st.vpn.lock().unwrap();
     rt.child = Some(child);
+    rt.xray = xray_child;
     rt.started_at = Some(crate::zapret::runner::now_ms());
     rt.error = None;
     rt.server_name = Some(name.clone());
@@ -376,7 +494,8 @@ pub fn start(st: &AppState) -> Result<(), String> {
         RouteMode::Lists => "списки → VPN",
         RouteMode::AllExceptRu => "всё через VPN, кроме РФ",
     };
-    journal::ok(format!("VPN включён · {name} · {mode}"));
+    let core = if use_xray { " · через Xray" } else { "" };
+    journal::ok(format!("VPN включён · {name} · {mode}{core}"));
     Ok(())
 }
 
@@ -386,9 +505,12 @@ fn sysproxy_is_ours(saved: &sysproxy::Saved, port: u16) -> bool {
 
 /// Остановить sing-box и вернуть системный прокси.
 pub fn stop(st: &AppState) -> Result<(), String> {
-    let child = st.vpn.lock().unwrap().child.take();
+    let (child, xchild) = {
+        let mut rt = st.vpn.lock().unwrap();
+        (rt.child.take(), rt.xray.take())
+    };
     let was = child.is_some();
-    if let Some(mut c) = child {
+    for mut c in [child, xchild].into_iter().flatten() {
         let _ = c.kill();
         let _ = c.wait();
     }
@@ -555,14 +677,22 @@ mod tests {
     fn chosen_picks_selected_or_auto() {
         let mut s = Store::default();
         assert!(chosen(&s).unwrap_err().contains("подписку"));
-        s.manual =
-            links::parse_many("trojan://p@a.com:443#A\ntrojan://p@b.com:443#B\nvless://u@c.com:443?type=xhttp#C");
+        s.manual = links::parse_many(
+            "trojan://p@a.com:443#A
+vless://u@c.com:443?type=xhttp#C
+hy2://pw@h.com:8443?sni=h.com#H",
+        );
+        // Автовыбор — через Xray (xhttp теперь тоже), Hysteria2 в нём не участвует.
         let (auto, name) = chosen(&s).unwrap();
-        assert_eq!(auto.len(), 2, "xhttp не поддерживается — пропущен");
+        assert!(matches!(&auto, Engine::Xray(v) if v.len() == 2));
         assert!(name.contains("Автоматически"));
-        s.selected = Some(s.manual[1].id.clone());
+        // Выбран Hysteria2 — его ведёт sing-box.
+        s.selected = Some(s.manual[2].id.clone());
         let (one, name) = chosen(&s).unwrap();
-        assert_eq!((one.len(), name.as_str()), (1, "B"));
+        assert!(matches!(&one, Engine::SingBox(v) if v.len() == 1));
+        assert_eq!(name, "H");
+        s.selected = Some(s.manual[1].id.clone());
+        assert!(matches!(chosen(&s).unwrap().0, Engine::Xray(v) if v.len() == 1));
     }
 
     #[test]
@@ -649,5 +779,86 @@ mod tests {
         println!("chatgpt.com через sing-box: код {vpn} (ожидается 000 — ушёл на недоступный «VPN»)");
         assert!(direct != "000" && !direct.is_empty(), "прямой сайт не открылся: {direct}");
         assert_eq!(vpn, "000", "сайт из VPN-списка ушёл не на VPN");
+    }
+
+    /// Вся цепочка на настоящих серверах: sing-box (прокси, списки) → Xray → VPN-сервер.
+    /// В `ZAPRETGUI_DATA_DIR\vpn\vpn.json` должна лежать настоящая подписка; системный прокси не трогается.
+    /// `ZAPRETGUI_DATA_DIR=<папка> cargo test -- --ignored live_xray_chain --nocapture`
+    #[test]
+    #[ignore]
+    fn live_xray_chain() {
+        assert!(std::env::var_os("ZAPRETGUI_DATA_DIR").is_some(), "задайте ZAPRETGUI_DATA_DIR");
+        if !xray::installed() {
+            let r = tauri::async_runtime::block_on(xray::latest()).expect("релиз Xray");
+            tauri::async_runtime::block_on(xray::install(&r, |p| {
+                if p % 50 == 0 {
+                    println!("Xray скачан на {p}%")
+                }
+            }))
+            .expect("скачивание Xray");
+        }
+        println!("sing-box {:?}, Xray {:?}", singbox::version(), xray::version());
+        tauri::async_runtime::block_on(update(None)).expect("обновление подписки (нужны исходные ссылки)");
+        lists::ensure_custom();
+        fs::write(
+            lists::custom_path(lists::VPN_FILE),
+            "api.ipify.org
+",
+        )
+        .unwrap();
+        let mut store = load();
+        store.port = 22080;
+        store.inbound = Inbound::Proxy;
+        store.route_mode = RouteMode::Lists;
+        let pick = |name: &str| servers(&store).iter().find(|s| s.name.contains(name)).map(|s| s.id.clone());
+        let curl = |url: &str| {
+            let out = crate::sys::cmd::hidden("curl.exe")
+                .args(["-s", "-o", "NUL", "-m", "12", "-w", "%{http_code}", "-x", "socks5h://127.0.0.1:22080", url])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        for (label, sel) in [("Франкфурт", pick("Франкфурт")), ("xhttp №7", pick("№7 LTE")), ("Автоматически", None)]
+        {
+            store.selected = sel;
+            let (name, use_xray) = write_config(&store, None).expect("конфиги");
+            let mut x = use_xray.then(|| xray::spawn(&xray_config_file()).expect("запуск Xray"));
+            std::thread::sleep(Duration::from_millis(800));
+            let mut sb = singbox::spawn(&config_file()).expect("запуск sing-box");
+            let t0 = Instant::now();
+            while !listening(22080) {
+                assert!(t0.elapsed() < Duration::from_secs(10), "sing-box не открыл порт: {:?}", last_error());
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            if sel_is_auto(&store) {
+                std::thread::sleep(Duration::from_secs(6)); // балансировщику — время замерить серверы
+            }
+            let vpn = curl("https://claude.ai");
+            let vpn2 = curl("https://www.gstatic.com/generate_204");
+            let direct = curl("https://ya.ru");
+            let ip = |url: &str| {
+                let out = crate::sys::cmd::hidden("curl.exe")
+                    .args(["-s", "-m", "12", "-x", "socks5h://127.0.0.1:22080", url])
+                    .output()
+                    .unwrap();
+                String::from_utf8_lossy(&out.stdout).trim().to_string()
+            };
+            let (ip_vpn, ip_direct) = (ip("https://api.ipify.org"), ip("https://api4.ipify.org"));
+            println!("{label}: IP через VPN {ip_vpn} · напрямую {ip_direct}");
+            assert!(!ip_vpn.is_empty() && ip_vpn != ip_direct, "{label}: IP через VPN совпал с прямым");
+            let _ = sb.kill();
+            let _ = sb.wait();
+            if let Some(c) = x.as_mut() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            println!("{label} ({name}, Xray: {use_xray}): claude.ai {vpn} · gstatic {vpn2} · ya.ru {direct}");
+            assert!(vpn != "000", "{label}: claude.ai через VPN не открылся; лог Xray: {:?}", xray_error());
+            assert!(direct != "000", "{label}: прямой сайт не открылся");
+        }
+    }
+
+    fn sel_is_auto(s: &Store) -> bool {
+        s.selected.is_none()
     }
 }

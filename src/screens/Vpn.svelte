@@ -13,7 +13,8 @@
 
   const fail = (e: unknown) => toast(api.errorText(e), "err");
   const vs = $derived(app.status?.vpn);
-  const installed = $derived(!!vs?.installed);
+  /** Оба ядра на месте: sing-box (маршрутизация) и Xray (VLESS/VMess/Trojan/Shadowsocks). */
+  const installed = $derived(!!vs?.installed && !!vs?.xrayInstalled);
   const running = $derived(!!vs?.running);
 
   let view = $state<VpnView | null>(null);
@@ -83,6 +84,8 @@
     store ? [...store.subscriptions.flatMap((s) => s.servers), ...store.manual] : [],
   );
   const usable = $derived(allServers.filter((s) => !s.unsupported));
+  /** Через Xray: протоколы, которые он ведёт (как в Rust: Server::via_xray). */
+  const viaXray = (s: VpnServer) => ["VLESS", "VMess", "Trojan", "Shadowsocks"].includes(s.protocol) && s.link !== null;
   let now = $state(Date.now());
   $effect(() => {
     if (!running || !vs?.startedAt) return;
@@ -97,10 +100,13 @@
   );
   const subtitle = $derived.by(() => {
     if (!vs) return "";
-    if (!installed) return "Нужен sing-box — ядро VPN (около 31 МБ с GitHub)";
+    if (!installed)
+      return vs.installed
+        ? "Нужен ещё Xray — ядро для серверов VLESS/VMess/Trojan/Shadowsocks (около 15 МБ)"
+        : "Нужны ядра VPN: sing-box и Xray (около 46 МБ с GitHub)";
     if (running) {
       const up = vs.startedAt ? ` · ${duration(now - vs.startedAt)}` : "";
-      return `${vs.server ?? "сервер"} · ${vs.routeMode ? modeLabel[vs.routeMode] : ""} · ${vs.inbound ? inboundLabel[vs.inbound] : ""}${up}`;
+      return `${vs.server ?? "сервер"} · ${vs.routeMode ? modeLabel[vs.routeMode] : ""} · ${vs.inbound ? inboundLabel[vs.inbound] : ""}${vs.viaXray ? " · через Xray" : ""}${up}`;
     }
     if (!vs.servers) return "Добавьте подписку или ключ — ниже, в «Серверах»";
     return "Сайты из VPN-списков идут через VPN, остальные — напрямую через zapret";
@@ -123,12 +129,13 @@
 
 <PageHeader title="VPN">
   <span class="head-status">
-    {#if installed}sing-box {vs?.version ?? ""}{#if vs?.latest}&nbsp;·&nbsp;<button
+    {#if installed}sing-box {vs?.version ?? ""} · Xray {vs?.xrayVersion ?? ""}{#if vs?.latest}&nbsp;·&nbsp;<button
           type="button"
           class="link upd"
+          title={`Доступно: ${vs.latest}`}
           disabled={!!busy || !!vs.busy}
-          onclick={install}>обновить до {vs.latest}</button
-        >{/if}{:else}sing-box · не скачан{/if}
+          onclick={install}>обновить</button
+        >{/if}{:else}ядра VPN · не скачаны{/if}
   </span>
 </PageHeader>
 
@@ -137,7 +144,7 @@
     on={running}
     busy={busy === "power" || (running && !vs?.ready) || !!vs?.busy}
     disabled={!installed || !usable.length || !!busy || !app.isAdmin}
-    title={!app.isAdmin ? "Нужны права администратора" : !installed ? "Сначала скачайте sing-box" : !usable.length ? "Добавьте подписку или ключ" : undefined}
+    title={!app.isAdmin ? "Нужны права администратора" : !installed ? "Сначала скачайте ядра VPN" : !usable.length ? "Добавьте подписку или ключ" : undefined}
     onclick={toggle}
   />
   <div class="state-body">
@@ -154,7 +161,7 @@
         <div class="bar" aria-hidden="true"><span style:width="{vs.progress ?? 6}%"></span></div>
         <span class="note">{vs.busy}{vs.progress != null ? ` · ${vs.progress}%` : ""}</span>
       {:else}
-        <div class="actions"><Button variant="primary" disabled={!!busy} onclick={install}>Скачать sing-box</Button></div>
+        <div class="actions"><Button variant="primary" disabled={!!busy} onclick={install}>Скачать ядра</Button></div>
       {/if}
     {/if}
   </div>
@@ -218,7 +225,7 @@
               onchange={() => select(s.id)}
             />
             <span class="srv-name">{s.name}</span>
-            <span class="badge">{s.protocol}</span>
+            <span class="badge" title={viaXray(s) ? "Соединение — через Xray" : "Соединение — через sing-box"}>{s.protocol}</span>
             <span class="srv-meta" class:err={view?.pings[s.id] === null}>{s.unsupported ? "не поддерживается" : pingText(s.id)}</span>
             {#if store?.manual.some((m) => m.id === s.id)}
               <button type="button" class="link danger x" aria-label="Удалить сервер" disabled={!!busy} onclick={() => remove(s.id)}>×</button>

@@ -1045,20 +1045,37 @@ fn vpn_busy(app: &AppHandle, busy: Option<&str>, progress: Option<u8>) {
     st.poke();
 }
 
-/// Скачать (или обновить) sing-box; работающий VPN перезапускается.
+/// Скачать или обновить ядра VPN — sing-box и Xray (каждое, если его нет или вышла новая версия).
+/// Работающий VPN перезапускается.
 #[tauri::command]
 pub async fn vpn_install(app: AppHandle) -> Res<String> {
-    vpn_busy(&app, Some("Получение ссылки на релиз"), None);
+    vpn_busy(&app, Some("Получение ссылок на релизы"), None);
     let r = async {
-        let rel = crate::vpn::singbox::latest().await?;
+        let sb = crate::vpn::singbox::latest().await?;
+        let xr = crate::vpn::xray::latest().await?;
+        let need_sb = !crate::vpn::singbox::installed() || crate::vpn::singbox::newer(&sb.version);
+        let need_xr = !crate::vpn::xray::installed() || crate::vpn::xray::newer(&xr.version);
+        if !need_sb && !need_xr {
+            return Ok::<String, String>("Ядра VPN — последних версий".into());
+        }
         let running = app.state::<AppState>().vpn.lock().unwrap().child.is_some();
         if running {
             crate::vpn::stop(&app.state::<AppState>())?;
         }
-        let a = app.clone();
-        crate::vpn::singbox::install(&rel, move |p| vpn_busy(&a, Some("Скачивание sing-box"), Some(p))).await?;
+        let mut done = Vec::new();
+        if need_sb {
+            let a = app.clone();
+            crate::vpn::singbox::install(&sb, move |p| vpn_busy(&a, Some("Скачивание sing-box"), Some(p))).await?;
+            done.push(format!("sing-box {}", sb.version));
+        }
+        if need_xr {
+            let a = app.clone();
+            crate::vpn::xray::install(&xr, move |p| vpn_busy(&a, Some("Скачивание Xray"), Some(p))).await?;
+            done.push(format!("Xray {}", xr.version));
+        }
         app.state::<AppState>().vpn.lock().unwrap().latest = None;
-        journal::ok(format!("sing-box {} установлен", rel.version));
+        let msg = format!("Установлено: {}", done.join(", "));
+        journal::ok(format!("VPN: {msg}"));
         if running {
             vpn_busy(&app, Some("Запуск"), None);
             let a = app.clone();
@@ -1066,11 +1083,11 @@ pub async fn vpn_install(app: AppHandle) -> Res<String> {
                 .await
                 .map_err(|e| e.to_string())??;
         }
-        Ok::<String, String>(format!("sing-box {} установлен", rel.version))
+        Ok(msg)
     }
     .await;
     vpn_busy(&app, None, None);
-    r.inspect_err(|e| journal::err(format!("sing-box: {e}")))
+    r.inspect_err(|e| journal::err(format!("Ядра VPN: {e}")))
 }
 
 /// Подписка (https://…) или ключи (vless://, ss://…).
@@ -1159,6 +1176,13 @@ pub async fn vpn_set(app: AppHandle, patch: Value) -> Res<VpnView> {
 
 #[tauri::command]
 pub async fn vpn_start(app: AppHandle) -> Res<()> {
+    // Серверы, сохранённые до появления Xray, не помнят исходных ссылок — обновляем подписки.
+    if crate::vpn::load().subscriptions.iter().any(|sub| sub.servers.iter().any(|sv| sv.link.is_none())) {
+        vpn_busy(&app, Some("Обновление подписки"), None);
+        if let Err(e) = crate::vpn::update(None).await {
+            journal::warn(format!("VPN: подписка не обновилась: {e}"));
+        }
+    }
     vpn_busy(&app, Some("Подготовка списков"), None);
     let store = crate::vpn::load();
     let mut need: Vec<&crate::vpn::lists::Preset> =

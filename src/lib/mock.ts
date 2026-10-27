@@ -88,18 +88,19 @@ function mockVpnStatus(v: string | null): Status["vpn"] {
     inbound: null as Status["vpn"]["inbound"], routeMode: null as Status["vpn"]["routeMode"], server: null as string | null,
     port: 2080, startedAt: null as number | null, busy: null as string | null, progress: null as number | null,
     error: null as string | null, servers: v === "empty" ? 0 : 4,
+    xrayInstalled: true, xrayVersion: "26.10.21" as string | null, viaXray: false,
   };
-  if (v === "none") return { ...base, installed: false, version: null, servers: 0 };
-  if (v === "on") return { ...base, running: true, ready: true, inbound: "proxy", routeMode: "lists", server: "Нидерланды · Амстердам", startedAt: Date.now() - 1_234_000 };
+  if (v === "none") return { ...base, installed: false, version: null, servers: 0, xrayInstalled: false, xrayVersion: null };
+  if (v === "on") return { ...base, running: true, ready: true, inbound: "proxy", routeMode: "lists", server: "Нидерланды · Амстердам", startedAt: Date.now() - 1_234_000, viaXray: true };
   if (v === "error") return { ...base, error: "sing-box не принял настройки: outbound[0]: missing uuid" };
   return base;
 }
 
-const VPN_SERVERS = [
+const VPN_SERVERS: { id: string; name: string; protocol: string; host: string; port: number; outbound: object | null; unsupported: string | null; link?: string | null }[] = [
   { id: "a1", name: "Нидерланды · Амстердам", protocol: "VLESS", host: "nl.example.net", port: 443, outbound: {}, unsupported: null },
   { id: "a2", name: "Германия · Франкфурт", protocol: "VLESS", host: "de.example.net", port: 443, outbound: {}, unsupported: null },
   { id: "a3", name: "Финляндия · Хельсинки", protocol: "Hysteria2", host: "fi.example.net", port: 8443, outbound: {}, unsupported: null },
-  { id: "a4", name: "США · xhttp", protocol: "VLESS", host: "us.example.net", port: 443, outbound: null, unsupported: "транспорт xhttp не поддерживается sing-box (он есть только в Xray)" },
+  { id: "a4", name: "США · xhttp", protocol: "VLESS", host: "us.example.net", port: 443, outbound: null, unsupported: null },
 ];
 let vpnStore = {
   subscriptions: params.get("vpn") === "empty" || params.get("vpn") === "none" ? [] : [{
@@ -691,9 +692,9 @@ export async function call<T>(cmd: string, args: Record<string, unknown> = {}): 
           changed();
           await wait(300);
         }
-        status.vpn = { ...status.vpn, installed: true, version: "1.14.4", busy: null, progress: null };
+        status.vpn = { ...status.vpn, installed: true, version: "1.14.4", xrayInstalled: true, xrayVersion: "26.10.21", busy: null, progress: null };
         changed();
-        return "sing-box 1.14.4 установлен";
+        return "Установлено: sing-box 1.14.4, Xray 26.10.21";
       case "vpn_add":
         await wait(700);
         if (!vpnStore.subscriptions.length) vpnStore.subscriptions = [{ ...mockVpnStatusSub() }];

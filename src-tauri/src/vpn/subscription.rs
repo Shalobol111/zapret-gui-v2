@@ -78,7 +78,7 @@ fn from_singbox_json(v: &Value) -> Vec<Server> {
                         use sha2::{Digest, Sha256};
                         crate::net::hex(&Sha256::digest(out.to_string().as_bytes())[..6])
                     };
-                    Server { id, name, protocol, host, port, outbound: Some(out), unsupported: None }
+                    Server { id, name, protocol, host, port, outbound: Some(out), unsupported: None, link: None }
                 })
                 .collect()
         })

@@ -130,6 +130,9 @@ export interface VpnStatus {
   progress: number | null;
   error: string | null;
   servers: number;
+  xrayInstalled: boolean;
+  xrayVersion: string | null;
+  viaXray: boolean;
 }
 
 export interface VpnServer {
@@ -140,6 +143,7 @@ export interface VpnServer {
   port: number;
   outbound: unknown | null;
   unsupported: string | null;
+  link?: string | null;
 }
 
 export interface VpnSubscription {

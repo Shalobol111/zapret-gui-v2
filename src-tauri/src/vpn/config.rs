@@ -63,6 +63,10 @@ pub fn build(i: &Input) -> Value {
     if i.inbound == Inbound::Tun {
         rules.push(json!({ "protocol": "dns", "action": "hijack-dns" }));
     }
+    // Соединения самого Xray с VPN-серверами — напрямую, иначе в режиме TUN они вернулись бы в sing-box.
+    if i.inbound == Inbound::Tun {
+        rules.push(json!({ "process_name": ["xray.exe"], "outbound": "direct" }));
+    }
     rules.push(json!({ "ip_is_private": true, "outbound": "direct" }));
     let mut sets = Vec::new();
     let mut add = |tag: &str, domains: &[String], outbound: &str, rules: &mut Vec<Value>| {

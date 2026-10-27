@@ -17,11 +17,28 @@ pub struct Server {
     pub protocol: String,
     pub host: String,
     pub port: u16,
-    /// Outbound sing-box (без `tag` — его ставит генератор конфига). `None` — не поддерживается.
+    /// Outbound sing-box (без `tag` — его ставит генератор конфига). `None` — sing-box не умеет
+    /// (например, транспорт xhttp) — тогда сервер работает через Xray.
     pub outbound: Option<Value>,
-    /// Почему сервер не поддерживается (например, транспорт xhttp есть только в Xray).
+    /// Почему сервер не поддерживается ни sing-box, ни Xray.
     pub unsupported: Option<String>,
+    /// Исходная ссылка: из неё строится соединение Xray (VLESS, VMess, Trojan, Shadowsocks).
+    #[serde(default)]
+    pub link: Option<String>,
 }
+
+impl Server {
+    /// Соединение с сервером делает Xray — эталонная реализация VLESS/VMess/Trojan/Shadowsocks:
+    /// с ней работают серверы, которые не принимают sing-box (Reality у части провайдеров, xhttp).
+    pub fn via_xray(&self) -> bool {
+        self.link.is_some() && XRAY_PROTOCOLS.contains(&self.protocol.as_str())
+    }
+    pub fn usable(&self) -> bool {
+        self.via_xray() || self.outbound.is_some()
+    }
+}
+
+pub const XRAY_PROTOCOLS: [&str; 4] = ["VLESS", "VMess", "Trojan", "Shadowsocks"];
 
 pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
     let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
@@ -143,9 +160,20 @@ fn name_of(u: &Url, fallback: &str) -> String {
 fn server(link: &str, name: String, protocol: &str, host: String, port: u16, out: Result<Value, String>) -> Server {
     let (outbound, unsupported) = match out {
         Ok(v) => (Some(v), None),
+        // Чего не умеет sing-box, умеет Xray — такие серверы поддерживаются через него.
+        Err(_) if XRAY_PROTOCOLS.contains(&protocol) => (None, None),
         Err(e) => (None, Some(e)),
     };
-    Server { id: server_id(link), name, protocol: protocol.into(), host, port, outbound, unsupported }
+    Server {
+        id: server_id(link),
+        name,
+        protocol: protocol.into(),
+        host,
+        port,
+        outbound,
+        unsupported,
+        link: Some(link.trim().to_string()),
+    }
 }
 
 fn vless(link: &str, u: &Url) -> Result<Server, String> {
@@ -337,8 +365,8 @@ mod tests {
         assert_eq!(o["transport"]["path"], "/ws");
         assert_eq!(o["transport"]["headers"]["Host"], "cdn.example.com");
         let x = parse("vless://u@h.com:443?type=xhttp&security=reality#X").unwrap();
-        assert!(x.outbound.is_none());
-        assert!(x.unsupported.unwrap().contains("xhttp"));
+        assert!(x.outbound.is_none(), "sing-box xhttp не умеет");
+        assert!(x.unsupported.is_none() && x.via_xray() && x.usable(), "а Xray умеет");
     }
 
     #[test]

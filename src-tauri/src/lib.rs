@@ -124,11 +124,23 @@ fn startup(app: &AppHandle) {
     if vpn::singbox::installed() && settings.check_updates {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
+            let mut newer = Vec::new();
             if let Ok(r) = vpn::singbox::latest().await {
                 if vpn::singbox::newer(&r.version) {
-                    journal::info(format!("Доступна новая версия sing-box: {}", r.version));
-                    app.state::<AppState>().vpn.lock().unwrap().latest = Some(r.version);
+                    newer.push(format!("sing-box {}", r.version));
                 }
+            }
+            if vpn::xray::installed() {
+                if let Ok(r) = vpn::xray::latest().await {
+                    if vpn::xray::newer(&r.version) {
+                        newer.push(format!("Xray {}", r.version));
+                    }
+                }
+            }
+            if !newer.is_empty() {
+                let text = newer.join(", ");
+                journal::info(format!("Доступны новые версии ядер VPN: {text}"));
+                app.state::<AppState>().vpn.lock().unwrap().latest = Some(text);
             }
         });
     }
