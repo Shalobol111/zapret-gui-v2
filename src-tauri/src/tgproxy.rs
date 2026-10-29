@@ -257,7 +257,13 @@ pub struct Shared {
 
 pub fn status(shared: &Shared) -> Status {
     let installed = installed();
-    let procs = if installed { ours() } else { vec![] };
+    // Один снимок процессов на обе проверки: своя копия и копия, запущенная отдельно.
+    let mine = exe();
+    let (procs, others): (Vec<_>, Vec<_>) = process::find_cached(&KNOWN_EXES)
+        .into_iter()
+        .partition(|p| installed && p.exe.as_deref().is_some_and(|e| same_path(e, &mine)));
+    let external =
+        others.into_iter().next().map(|p| p.exe.map(|e| e.display().to_string()).unwrap_or_else(|| "TgWsProxy".into()));
     let port = config().port;
     let running = !procs.is_empty();
     Status {
@@ -268,7 +274,7 @@ pub fn status(shared: &Shared) -> Status {
         listening: running && listening(port),
         port,
         started_at: procs.iter().map(|p| p.start_time * 1000).min(),
-        external: external(),
+        external,
         busy: shared.busy.clone(),
         progress: shared.progress,
     }

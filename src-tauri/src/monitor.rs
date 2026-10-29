@@ -83,7 +83,7 @@ pub fn compute(state: &AppState) -> Status {
     });
 
     let svc = service::status(root.as_deref());
-    let procs = process::find("winws.exe");
+    let procs = process::find_cached(&["winws.exe"]);
     let mut runner = state.runner.lock().unwrap();
     runner.reap();
 
@@ -213,4 +213,48 @@ pub fn start(app: AppHandle) {
             }
         })
         .expect("не удалось запустить поток monitor");
+}
+
+#[cfg(test)]
+mod bench {
+    /// Сколько стоит каждая часть опроса состояния: `ZAPRET_ROOT=<папка> cargo test --release -- --ignored monitor_cost --nocapture`
+    #[test]
+    #[ignore]
+    fn monitor_cost() {
+        use std::time::Instant;
+        let root = std::path::PathBuf::from(std::env::var("ZAPRET_ROOT").expect("ZAPRET_ROOT"));
+        let time = |name: &str, n: u32, f: &mut dyn FnMut()| {
+            let t0 = Instant::now();
+            for _ in 0..n {
+                f();
+            }
+            println!("{name:<38} {:>8.2} мс", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
+        };
+        time("service::status (со сверкой стратегии)", 20, &mut || {
+            let _ = crate::zapret::service::status(Some(&root));
+        });
+        time("service::status (без сверки)", 20, &mut || {
+            let _ = crate::zapret::service::status(None);
+        });
+        time("inspect (все стратегии, раз в 5 с)", 5, &mut || {
+            let _ = crate::state::inspect(&root);
+        });
+        time("process::find(winws.exe) — свежий снимок", 20, &mut || {
+            let _ = crate::sys::process::find("winws.exe");
+        });
+        time("process::find_cached(winws.exe) — монитор", 20, &mut || {
+            let _ = crate::sys::process::find_cached(&["winws.exe"]);
+        });
+        time("tgproxy::status", 20, &mut || {
+            let _ = crate::tgproxy::status(&Default::default());
+        });
+        time("filters (game, ipset)", 20, &mut || {
+            let _ = crate::zapret::filters::game(&root);
+            let _ = crate::zapret::filters::ipset_mode(&root);
+        });
+        time("vpn::load + status", 20, &mut || {
+            let s = crate::vpn::load();
+            let _ = crate::vpn::status(&mut Default::default(), &s);
+        });
+    }
 }

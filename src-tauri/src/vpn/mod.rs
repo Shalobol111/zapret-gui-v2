@@ -861,4 +861,78 @@ hy2://pw@h.com:8443?sni=h.com#H",
     fn sel_is_auto(s: &Store) -> bool {
         s.selected.is_none()
     }
+
+    /// Нагрузка: ~1 минута загрузок через VPN (по 5 МБ, всего ~150 МБ трафика VPN) и напрямую,
+    /// после каждой — память и CPU sing-box и Xray.
+    /// `ZAPRETGUI_DATA_DIR=<папка с vpn\vpn.json> cargo test -- --ignored live_vpn_load --nocapture`
+    #[test]
+    #[ignore]
+    fn live_vpn_load() {
+        assert!(std::env::var_os("ZAPRETGUI_DATA_DIR").is_some(), "задайте ZAPRETGUI_DATA_DIR");
+        lists::ensure_custom();
+        fs::write(lists::custom_path(lists::VPN_FILE), "speed.cloudflare.com\n").unwrap();
+        let mut store = load();
+        store.port = 22080;
+        store.inbound = Inbound::Proxy;
+        store.selected = servers(&store).iter().find(|s| s.name.contains("Франкфурт")).map(|s| s.id.clone());
+        let (name, use_xray) = write_config(&store, None).expect("конфиги");
+        let mut x = use_xray.then(|| xray::spawn(&xray_config_file()).unwrap());
+        std::thread::sleep(Duration::from_millis(800));
+        let mut sb = singbox::spawn(&config_file()).unwrap();
+        while !listening(22080) {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let pids: Vec<(String, u32)> = [("sing-box", sb.id())]
+            .into_iter()
+            .chain(x.as_ref().map(|c| ("xray", c.id())))
+            .map(|(n, p)| (n.to_string(), p))
+            .collect();
+        let sample = |label: &str| {
+            let ids = pids.iter().map(|(_, p)| p.to_string()).collect::<Vec<_>>().join(",");
+            let out = crate::sys::cmd::hidden("powershell")
+                .args(["-NoProfile", "-Command", &format!("Get-Process -Id {ids} | ForEach-Object {{ '{{0}}={{1}}МБ/{{2:N1}}с' -f $_.Name, [int]($_.PrivateMemorySize64/1MB), $_.CPU }}")])
+                .output()
+                .unwrap();
+            println!(
+                "{label:>6}: {}",
+                String::from_utf8_lossy(&out.stdout).split_whitespace().collect::<Vec<_>>().join("  ")
+            );
+        };
+        println!("сервер: {name} (Xray: {use_xray})");
+        sample("старт");
+        let t0 = Instant::now();
+        let mut n = 0;
+        while t0.elapsed() < Duration::from_secs(60) {
+            let dl = |url: &str| {
+                let out = crate::sys::cmd::hidden("curl.exe")
+                    .args([
+                        "-s",
+                        "-o",
+                        "NUL",
+                        "-m",
+                        "25",
+                        "-w",
+                        "%{http_code} %{speed_download}",
+                        "-x",
+                        "socks5h://127.0.0.1:22080",
+                        url,
+                    ])
+                    .output()
+                    .unwrap();
+                String::from_utf8_lossy(&out.stdout).trim().to_string()
+            };
+            let v = dl("https://speed.cloudflare.com/__down?bytes=5000000");
+            let d = dl("https://ya.ru");
+            n += 1;
+            let mbps = v.split_whitespace().nth(1).and_then(|b| b.parse::<f64>().ok()).unwrap_or(0.0) * 8.0 / 1e6;
+            println!("  загрузка {n}: VPN {v:.10} ({mbps:.1} Мбит/с) · напрямую ya.ru {d:.3}");
+            sample(&format!("{}с", t0.elapsed().as_secs()));
+        }
+        let _ = sb.kill();
+        let _ = sb.wait();
+        if let Some(c) = x.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
 }
